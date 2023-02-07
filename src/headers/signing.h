@@ -1,5 +1,5 @@
 #include "random.h"
-
+#include <gmp.h>
 
 /*Preprocess stage*/
 unsigned char fwd_nonces_commit ()
@@ -7,7 +7,7 @@ unsigned char fwd_nonces_commit ()
 /*
 # create nonce list [];
 #
-# 1. Preprocess(π) ⭢  (i, ⟨D_i_j⟩), 1 ≤ j ≤ π | i - participant idetifier 
+# 1. Preprocess(π) ->  (i, ⟨D_i_j⟩), 1 ≤ j ≤ π | i - participant idetifier 
 where : (D_ij) is nonce pair of G over random number -> (g^d_ij)
 #
 # 2. stores locally (d_i, ⟨D_i_j⟩;
@@ -27,6 +27,45 @@ unsigned char fwd_group_pub_commit ()
 */
 }
 
+ int lagrange_coefficient(int self, int *participant_indexes, int num_participants) {
+
+/*
+For a fixed set S = {p1, . . . , pt} of t participant identifiers in the signing operation,
+let λi = π xpj /(x_pj − x_pi) denote the ith Lagrange coefficient for interpolating over S
+*/
+    mpz_t numerator, denominator, res, q;
+    mpz_init(numerator);
+    mpz_init(denominator);
+    mpz_init(res);
+    mpz_init(q);
+
+    mpz_set_ui(numerator, 1);
+    mpz_set_ui(denominator, 1);
+
+    mpz_set_str(q, Q, 10);
+
+    for (int i = 0; i < num_participants; i++) {
+        int index = participant_indexes[i];
+        if (index == self) {
+            continue;
+        }
+        mpz_mul_ui(numerator, numerator, index);
+        mpz_mul_ui(denominator, denominator, (index - self));
+    }
+
+    mpz_invert(denominator, denominator, q);
+    mpz_mul(res, numerator, denominator);
+    mpz_mod(res, res, q);
+
+    int result = mpz_get_ui(res);
+
+    mpz_clear(numerator);
+    mpz_clear(denominator);
+    mpz_clear(res);
+    mpz_clear(q);
+
+    return result;
+}
 unsigned char fwd_sig_commit()
 {
 

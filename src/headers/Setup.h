@@ -12,6 +12,7 @@ struct participant
     # coefficient commitment []
     # share list []
     # verification share
+    # public key
     # secret signing share 
     # nonce pair list []
     # nonce commitments pair list []
@@ -33,6 +34,19 @@ struct aggregator
 
     */
 };
+
+struct term
+{
+    int coefficient;
+    int exponent;
+};
+
+struct poly
+{
+    int n;
+    struct term *t;    
+};
+
 
 
 /*Pedersen Distributed Key Generation*/
@@ -58,6 +72,8 @@ unsigned char define_polynomyial()
     /*
 # 1. Every participant Pi define a polynomial
 # f_i(x) = ∑ a_i_j * x^j, 0 ≤ j ≤ t - 1
+# 
+# for loop inserting terms to struct poly
 #
 # Horner method ?
    
@@ -94,7 +110,7 @@ unsigned int verify_sec_share()
 
 /*
 # 1. Every participant Pi verifies the share they received from each other participant Pj , where i != j, by verifying:
-# # g ^ f_j(i) ≟ ∏ 𝜙_j_k ^ (i ^ k mod q)  : 0 ≤ k ≤ t - 1
+# # G ^ f_j(i) ≟ ∏ 𝜙_j_k ^ (i ^ k mod G)  : 0 ≤ k ≤ t - 1
 #
 # if (success){pass}
 # else {abort & investigate??} 
@@ -106,13 +122,17 @@ unsigned char gen_keys()
 {
 
 /*
-# 1. will create long-lived private signing share:
+# 1. will create long-lived secret signing share:
 # s_i = ∑ f_j(i), 1 ≤ j ≤ n
+# sum of share list [] -> create signing share;
 #
 # stores s_i
 #
 # 2. Each participant then calculates their own public verification share:
 # Y_i = G ^ s_i
+#
+# 3. Each participant then calculates public key:
+# Y = ∏ 𝜙_j_0
 */
 
 }

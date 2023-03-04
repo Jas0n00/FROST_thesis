@@ -6,25 +6,22 @@ participant Participant_2 as p2
 
 
 !pragma teoz true
-agg ->> p1 : share_request
-& agg ->> p2 
 
-agg -> agg : init_pub_share
-& p1 -> p1 : init_pub_share
+
+p1 -> p1 : init_pub_share
 & p2 -> p2 : init_pub_share
 
 p1 --> agg : pub_share_packet
 p2 --> agg : pub_share_packet
 
-agg -> agg : init_pub_commit
+agg -> agg : init_tuple_packet
 
 note left of agg : Broadcast
 agg ->> p1 : tuple_packet
 & agg ->> p2 
 note left of agg : End of \nBroadcast
 
-agg -> agg : init_sec_share\nand \ndelete (d,D)
-& p1 -> p1 : init_sec_share\nand \ndelete (d,D)
+p1 -> p1 : init_sec_share\nand \ndelete (d,D)
 & p2 -> p2 : init_sec_share\nand \ndelete (d,D)
 
 p1 --> agg : sec_share_packet

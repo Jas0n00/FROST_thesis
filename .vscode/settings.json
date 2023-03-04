@@ -1,8 +1,6 @@
 {
     "files.associations": {
-        "atomic": "c",
-        "*.tcc": "c",
-        "cstdint": "c",
-        "random": "c"
+        "setup.h": "c",
+        "stdio.h": "c"
     }
 }

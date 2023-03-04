@@ -1,15 +1,19 @@
+#include <openssl/rand.h>
+#include <openssl/bn.h>
+#include <openssl/crypto.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <openssl/bn.h>
-#include "headers/setup.h"
+#include "../headers/setup.h"
+#include "../headers/globals.h"    
 
 
 
-void init_coeff_list(participant* participant)
+void init_coeff_list(participant* p)
 {
+
 /*
 zavola sa v init_pub_commit
 funkcia alokuje a ulozi do struktury participant
@@ -17,13 +21,23 @@ funkcia alokuje a ulozi do struktury participant
 # alocate coefficient list []; (size of list is always t)
 # fulfill with random numbers: (a_i_0, . . ., a_i_(t - 1)) <- $ ℤq
 */
+
+    int threshold = p->threshold;
+    p->list = malloc(sizeof(coeff_list));
+    p->list->coefficient_list_len = threshold;
+    p->list->coeff = OPENSSL_malloc(sizeof(BIGNUM*) * threshold); // Note the use of sizeof(BIGNUM*)
+
+    // Fill the coefficient_list with random BIGNUMs
+    for (int i = 0; i < threshold; i++) {
+        p->list->coeff[i] = BN_new(); // Call BN_new() before allocating memory
+        BN_copy(p->list->coeff[i], generate_rand());
+    }
 }
 
-
-void free_coeff_list( participant* participant)
+void free_coeff_list( participant* p)
 {}
 
-BIGNUM* define_polynomyial( participant* participant, int r_participant_index)
+BIGNUM* define_polynomyial( participant* sender, int reciever_index)
 {
 /*
 za kazdym volanim bude vraciat uz vysledok hodnoty
@@ -39,25 +53,31 @@ vola sa v init_sec_share
 */
 }
 
-pub_commit_packet init_pub_commit(participant* participant)
+pub_commit_packet* init_pub_commit(participant* p)
 {
-int threshold = participant->threshold;
-pub_commit_packet packet;
+int threshold = p->threshold;
 
 /* call init_coeff_list */
+init_coeff_list(p);
 
-/*pull coefficients from particpant*/
+/* allocate memory for the public commit array */
+p->pub_commit = malloc(sizeof(pub_commit_packet));
+p->pub_commit->sender_index = p->index;
+p->pub_commit->commit_len = threshold;
+p->pub_commit->commit = OPENSSL_malloc(sizeof(BIGNUM*) * threshold);
 
-/* allocate memory for the commit array */
 
 /* fulfill with G ^ a_i_j where: 0 ≤ j ≤ t - 1 */
 for(int j=0; j<threshold; j++)
 {
-    /* compute G ^ a_i_j and store in commit[j] */
+    p->pub_commit->commit[j] = BN_new();
+    BIGNUM* result = BN_new();
+    BN_mod_exp(result, generator, p->list->coeff[j], order, BN_CTX_new());
+    BN_copy(p->pub_commit->commit[j],result);
 }
 
 
-return packet;
+return p->pub_commit;
 }
 
 
@@ -65,7 +85,7 @@ void free_pub_commit(pub_commit_packet* pub_commit)
 {}
 
 
-bool accept_pub_commit( participant* r_participant, pub_commit_packet* pub_commit)
+bool accept_pub_commit( participant* reciever, pub_commit_packet* pub_commit)
 {
  /*2. P_i broadcast public commitment (whole list) to all participants P_j
  P_j saves it to rcvd_pub_commit[]
@@ -73,7 +93,7 @@ bool accept_pub_commit( participant* r_participant, pub_commit_packet* pub_commi
 }
 
 
-BIGNUM* init_sec_share( participant* s_participant, int r_participant_index)
+BIGNUM* init_sec_share( participant* sender, int reciever_index)
 {
 /*
 volaj define polynomial kde dosadis s_participant, r_participant_index
@@ -82,11 +102,11 @@ volaj define polynomial kde dosadis s_participant, r_participant_index
 # save it and each share append to share list []
 */
 
- BIGNUM* share = BN_new();
+ 
 }
 
 
-bool accept_sec_share(participant* s_participant, int r_participant_index, BIGNUM* sec_share)
+bool accept_sec_share(participant* reciever, int sender_index, BIGNUM* sec_share)
 {
 /*
 # 1. Every participant Pi verifies the share they received from each other participant Pj , where i != j, by verifying:
@@ -98,7 +118,7 @@ bool accept_sec_share(participant* s_participant, int r_participant_index, BIGNU
 }
 
 
-bool gen_keys( participant* participant)
+bool gen_keys( participant* p)
 {
 /*
 # 1. will create long-lived secret share:

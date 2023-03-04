@@ -1,8 +1,17 @@
-#include "random.h"
-#include <gmp.h>
+#include "../headers/setup.h"
+#include "../headers/signing.h"
+#include <openssl/bn.h>
+
+
+
+
+
+
+
+
 
 /*Preprocess stage*/
-unsigned char fwd_nonces_commit ()
+pub_share_packet init_pub_share (participant* p)
 {
 /*
 # create nonce list [];
@@ -18,7 +27,7 @@ where : (D_ij) is nonce pair of G over random number -> (g^d_ij)
 
 /*Signing stage*/
 
-unsigned char fwd_group_pub_commit ()
+bool accept_pub_share(participant* reciever, pub_share_packet* packet)
 {
 /*
 # 1. Aggregator computes the signing group’s public commitment ∏ D_ij
@@ -66,7 +75,10 @@ let λi = π xpj /(x_pj − x_pi) denote the ith Lagrange coefficient for interp
 
     return result;
 }
-unsigned char fwd_sig_commit()
+
+bool accept_tuple(participant* reciever, tuple_packet packet)
+{}
+pub_share_packet init_sig_share(participant* p)
 {
 
     /*
@@ -79,7 +91,7 @@ unsigned char fwd_sig_commit()
     */
 }
 
-unsigned int verify_sig_commit()
+bool accept_sig_share(participant* reciever, BIGNUM* sig_share)
 {
 
     /*
@@ -88,7 +100,7 @@ unsigned int verify_sig_commit()
     */
 }
 
-unsigned char signature()
+BIGNUM* signature(participant* p)
 {
 
     /*

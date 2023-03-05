@@ -27,7 +27,7 @@ where : (D_ij) is nonce pair of G over random number -> (g^d_ij)
 
 /*Signing stage*/
 
-bool accept_pub_share(participant* reciever, pub_share_packet* packet)
+bool accept_pub_share(aggregator* reciever, pub_share_packet* packet)
 {
 /*
 # 1. Aggregator computes the signing group’s public commitment ∏ D_ij
@@ -76,9 +76,13 @@ let λi = π xpj /(x_pj − x_pi) denote the ith Lagrange coefficient for interp
     return result;
 }
 
-bool accept_tuple(participant* reciever, tuple_packet packet)
+
+
+bool accept_tuple(participant* reciever, tuple_packet* packet)
 {}
-pub_share_packet init_sig_share(participant* p)
+
+
+BIGNUM* init_sig_share(participant* p)
 {
 
     /*
@@ -91,7 +95,7 @@ pub_share_packet init_sig_share(participant* p)
     */
 }
 
-bool accept_sig_share(participant* reciever, BIGNUM* sig_share)
+bool accept_sig_share(aggregator* reciever, BIGNUM* sig_share)
 {
 
     /*
@@ -100,7 +104,7 @@ bool accept_sig_share(participant* reciever, BIGNUM* sig_share)
     */
 }
 
-BIGNUM* signature(participant* p)
+BIGNUM* signature(aggregator* p)
 {
 
     /*

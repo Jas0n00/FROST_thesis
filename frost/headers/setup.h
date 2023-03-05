@@ -22,13 +22,13 @@ typedef struct {
 
 typedef struct{
     int sender_index;
-    BIGNUM* pub_share;
+    BIGNUM** pub_share;
 } pub_share_packet;
 
 
 typedef struct{
-    int coefficient;
-    int exponent;
+    BIGNUM* coefficient;
+    BIGNUM* exponent;
 } term;
 
 
@@ -36,6 +36,15 @@ typedef struct{
     int n;
     term *t;    
 } poly;
+
+
+typedef struct
+{
+    int row;
+    int cols;
+    BIGNUM*** rcvd_data;
+} matrix_rcvd_commits;
+
 
 
 typedef struct{
@@ -48,7 +57,10 @@ typedef struct{
     BIGNUM* nonce; 
     coeff_list* list;
     pub_commit_packet* pub_commit;
-    pub_share_packet* pub_share; 
+    pub_share_packet* pub_share;
+    poly* func;
+    matrix_rcvd_commits* rcvd_commits;
+    BIGNUM** rcvd_sec_share;
 } participant;
 
 

@@ -37,21 +37,6 @@ funkcia alokuje a ulozi do struktury participant
 void free_coeff_list( participant* p)
 {}
 
-BIGNUM* define_polynomyial( participant* sender, int reciever_index)
-{
-/*
-za kazdym volanim bude vraciat uz vysledok hodnoty
-vytiahne uz ulozene coefficienty a dosadi r_index
-vola sa v init_sec_share
-
-# 1. Every participant Pi define a polynomial
-# f_i(x) = ∑ a_i_j * x^j, 0 ≤ j ≤ t - 1
-# 
-# for loop inserting terms to struct poly
-#
-# Horner method ?
-*/
-}
 
 pub_commit_packet* init_pub_commit(participant* p)
 {
@@ -72,7 +57,7 @@ for(int j=0; j<threshold; j++)
 {
     p->pub_commit->commit[j] = BN_new();
     BIGNUM* result = BN_new();
-    BN_mod_exp(result, generator, p->list->coeff[j], order, BN_CTX_new());
+    BN_mod_exp(result, b_generator, p->list->coeff[j], order, BN_CTX_new());
     BN_copy(p->pub_commit->commit[j],result);
 }
 
@@ -87,33 +72,103 @@ void free_pub_commit(pub_commit_packet* pub_commit)
 
 bool accept_pub_commit( participant* reciever, pub_commit_packet* pub_commit)
 {
- /*2. P_i broadcast public commitment (whole list) to all participants P_j
- P_j saves it to rcvd_pub_commit[]
-*/
+ /*1. P_i broadcast public commitment (whole list) to all participants P_j
+ P_j saves it to matrix_rcvd_commits*/
+
+int threshold = reciever->threshold;
+int participants = reciever->participants;
+reciever->rcvd_commits = malloc(sizeof(matrix_rcvd_commits));
+reciever->rcvd_commits->row = participants;
+reciever->rcvd_commits->cols = threshold;
+reciever->rcvd_commits->rcvd_data = OPENSSL_malloc(participants * sizeof(BIGNUM**));
+
+// Alocate matrix
+for(int i = 0; i < reciever->rcvd_commits->row; i++){
+    reciever->rcvd_commits->rcvd_data[i] = OPENSSL_malloc(reciever->rcvd_commits->cols * sizeof(BIGNUM*));
+    for (int j = 0; j < reciever->rcvd_commits->cols; j++){
+        reciever->rcvd_commits->rcvd_data[i][j] = BN_new();
+    }
+}
+//Fullfil matrix
+for(int i = 0; i < reciever->rcvd_commits->row; i++){
+    if(pub_commit->sender_index == i){
+        for (int j = 0; j < pub_commit->commit_len; j++){
+            BN_copy(reciever->rcvd_commits->rcvd_data[i][j],pub_commit->commit[j]);
+        }
+    }
+    else {continue;}
+}
+
+return true;
 }
 
 
 BIGNUM* init_sec_share( participant* sender, int reciever_index)
 {
-/*
-volaj define polynomial kde dosadis s_participant, r_participant_index
-# 1 .Each participant Pi securely sends to each other participant Pj a secret share:
-# (j, f_i(j))
-# save it and each share append to share list []
-*/
 
- 
+int threshold = sender->threshold;
+BIGNUM* result = BN_new();
+//convert integer r_index to bignum
+BIGNUM* b_index = BN_new();
+BN_set_word(b_index, reciever_index);
+
+sender->func = malloc(sizeof(poly));
+sender->func->n = threshold;
+sender->func->t = malloc(sizeof(term) * threshold);
+
+/*
+# 1. Define a polynomial
+# f_i(x) = ∑ a_i_j * x^j, 0 ≤ j ≤ t - 1
+*/
+ for (int i = 0; i < threshold; i++) {
+    sender->func->t[i].coefficient = BN_new();
+    BN_copy(sender->func->t[i].coefficient, sender->list->coeff[i]);
+    
+    //convert integer exponent to bignum
+    BIGNUM* b_expo = BN_new();
+    BN_set_word(b_expo, i);
+    sender->func->t[i].exponent = b_expo;
+    }
+
+/*
+# 2. Calculate a polynomial
+# f_i(x) = ∑ a_i_j * x^j, 0 ≤ j ≤ t - 1
+*/
+for (int i = 0; i < sender->func->n; i++){
+    BIGNUM* expo_product = BN_new();
+    BIGNUM* multi_product = BN_new();
+
+    BN_mod_exp(expo_product, b_index, sender->func->t[i].exponent, order, BN_CTX_new());
+    BN_mod_mul(multi_product, sender->func->t[i].coefficient, expo_product, order, BN_CTX_new());
+    BN_mod_add(result, result, multi_product, order, BN_CTX_new());
+}
+
+
+return result; 
 }
 
 
 bool accept_sec_share(participant* reciever, int sender_index, BIGNUM* sec_share)
 {
+int threshold = reciever->threshold;
+reciever->rcvd_sec_share = OPENSSL_malloc(sizeof(BIGNUM*) * threshold);
+
 /*
-# 1. Every participant Pi verifies the share they received from each other participant Pj , where i != j, by verifying:
+# 1. Save sent sec_share to rcvd_sec_share[]
+*/
+
+
+
+
+
+
+
+
+
+/*
+# 2. Every participant Pi verifies the share they received from each other participant Pj , where i != j, by verifying:
 # # G ^ f_j(i) ≟ ∏ 𝜙_j_k ^ (i ^ k mod G)  : 0 ≤ k ≤ t - 1
 #
-# if (success){pass}
-# else {abort & investigate??} 
 */
 }
 

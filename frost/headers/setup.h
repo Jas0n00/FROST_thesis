@@ -1,3 +1,6 @@
+#ifndef PARTICIPANT_ATRIBUTES
+#define PARTICIPANT_ATRIBUTES
+
 # include <stdio.h>
 # include <stdlib.h>
 #include <stdint.h>
@@ -40,10 +43,9 @@ typedef struct{
 
 typedef struct
 {
-    int row;
-    int cols;
-    BIGNUM*** rcvd_data;
-} matrix_rcvd_commits;
+    size_t  num_packets;
+    pub_commit_packet* rcvd_packets;
+} rcvd_pub_commits;
 
 
 
@@ -59,10 +61,9 @@ typedef struct{
     pub_commit_packet* pub_commit;
     pub_share_packet* pub_share;
     poly* func;
-    matrix_rcvd_commits* rcvd_commits;
+    rcvd_pub_commits* rcvd_commits;
     BIGNUM** rcvd_sec_share;
 } participant;
-
 
 
 
@@ -83,3 +84,4 @@ bool accept_sec_share(participant* reciever, int sender_index, BIGNUM* sec_share
 
 bool gen_keys(participant* p);
 
+#endif

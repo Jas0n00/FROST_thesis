@@ -70,34 +70,42 @@ void free_pub_commit(pub_commit_packet* pub_commit)
 {}
 
 
-bool accept_pub_commit( participant* reciever, pub_commit_packet* pub_commit)
+bool accept_pub_commit( participant* receiver, pub_commit_packet* pub_commit)
 {
  /*1. P_i broadcast public commitment (whole list) to all participants P_j
  P_j saves it to matrix_rcvd_commits*/
 
-int threshold = reciever->threshold;
-int participants = reciever->participants;
-reciever->rcvd_commits = malloc(sizeof(matrix_rcvd_commits));
-reciever->rcvd_commits->row = participants;
-reciever->rcvd_commits->cols = threshold;
-reciever->rcvd_commits->rcvd_data = OPENSSL_malloc(participants * sizeof(BIGNUM**));
+int threshold = receiver->threshold;
+int num_packets = receiver->participants;
 
-// Alocate matrix
-for(int i = 0; i < reciever->rcvd_commits->row; i++){
-    reciever->rcvd_commits->rcvd_data[i] = OPENSSL_malloc(reciever->rcvd_commits->cols * sizeof(BIGNUM*));
-    for (int j = 0; j < reciever->rcvd_commits->cols; j++){
-        reciever->rcvd_commits->rcvd_data[i][j] = BN_new();
+
+if (receiver->rcvd_commits == NULL) {
+// Allocate memory for received commits
+receiver->rcvd_commits = malloc(sizeof(rcvd_pub_commits));
+receiver->rcvd_commits->num_packets = num_packets;
+receiver->rcvd_commits->rcvd_packets = malloc(sizeof(pub_commit_packet) * num_packets);
+
+    // Allocate memory for each packet
+    for (int i = 0; i < num_packets; i++) {
+        receiver->rcvd_commits->rcvd_packets[i].commit_len = 0;
+        receiver->rcvd_commits->rcvd_packets[i].sender_index = -1;
+        receiver->rcvd_commits->rcvd_packets[i].commit = NULL;
     }
 }
-//Fullfil matrix
-for(int i = 0; i < reciever->rcvd_commits->row; i++){
-    if(pub_commit->sender_index == i){
-        for (int j = 0; j < pub_commit->commit_len; j++){
-            BN_copy(reciever->rcvd_commits->rcvd_data[i][j],pub_commit->commit[j]);
+
+    //Fullfil array
+    for(int i = 0; i < num_packets; i++){
+        if(pub_commit->sender_index == i){
+          // Allocate memory for packet commit array
+          if (receiver->rcvd_commits->rcvd_packets[i].commit == NULL) {
+            receiver->rcvd_commits->rcvd_packets[i].commit = OPENSSL_malloc(sizeof(BIGNUM*) * pub_commit->commit_len);
+        }
+        // Copy values from pub_commit packet to received packet
+        receiver->rcvd_commits->rcvd_packets[i].commit_len = pub_commit->commit_len;
+        receiver->rcvd_commits->rcvd_packets[i].sender_index = pub_commit->sender_index;
+        BN_copy(receiver->rcvd_commits->rcvd_packets[i].commit, pub_commit->commit);
         }
     }
-    else {continue;}
-}
 
 return true;
 }
@@ -148,10 +156,10 @@ return result;
 }
 
 
-bool accept_sec_share(participant* reciever, int sender_index, BIGNUM* sec_share)
+bool accept_sec_share(participant* receiver, int sender_index, BIGNUM* sec_share)
 {
-int threshold = reciever->threshold;
-reciever->rcvd_sec_share = OPENSSL_malloc(sizeof(BIGNUM*) * threshold);
+int threshold = receiver->threshold;
+receiver->rcvd_sec_share = OPENSSL_malloc(sizeof(BIGNUM*) * threshold);
 
 /*
 # 1. Save sent sec_share to rcvd_sec_share[]

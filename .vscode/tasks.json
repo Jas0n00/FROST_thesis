@@ -4,7 +4,7 @@
         {
             "label": "build",
             "type": "shell",
-            "command": " gcc -I~/Desktop/thesis/FROST_thesis/frost/headers -o ./build/main.o ./src/main.c",
+            "command": " gcc -I./frost/headers -o ./build/main.o ./src/main.c ./src/setup.c ./src/signing.c ./src/globals.c",
             "args": [
                 "-I/usr/include/openssl",
                 "-L${workspaceFolder}/frost/headers",

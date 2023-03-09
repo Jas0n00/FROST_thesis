@@ -1,62 +1,59 @@
+#include <../headers/globals.h>
+#include <openssl/bn.h>
 #include <openssl/ec.h>
 #include <openssl/obj_mac.h>
-#include <openssl/bn.h>
 #include <stdio.h>
-#include <../headers/globals.h>
 
-void initialize_curve_parameters()
-{
-    ec_group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
-    if (!ec_group)
-    {
-        printf("Error creating EC group\n");
-        return;
-    }
+void initialize_curve_parameters() {
+  ec_group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
+  if (!ec_group) {
+    printf("Error creating EC group\n");
+    return;
+  }
 
-    p_generator = EC_GROUP_get0_generator(ec_group);
-    
-    // serialize the point into a byte array; The EC_POINT_point2bn has been deprecated since OpenSSL 3.0
-    size_t buf_len = EC_POINT_point2oct(ec_group, p_generator, POINT_CONVERSION_UNCOMPRESSED, NULL, 0, NULL);
-    unsigned char* buf = OPENSSL_malloc(buf_len);
-    EC_POINT_point2oct(ec_group, p_generator, POINT_CONVERSION_UNCOMPRESSED, buf, buf_len, NULL);
+  p_generator = EC_GROUP_get0_generator(ec_group);
 
-   // create a BIGNUM from the byte array
-    b_generator = BN_bin2bn(buf, buf_len, NULL);
-    if (!b_generator)
-    {
-        printf("Error creating BIGNUM from byte array\n");
-        return;
-    }
+  // serialize the point into a byte array; The EC_POINT_point2bn has been
+  // deprecated since OpenSSL 3.0
+  size_t buf_len = EC_POINT_point2oct(
+      ec_group, p_generator, POINT_CONVERSION_UNCOMPRESSED, NULL, 0, NULL);
+  unsigned char* buf = OPENSSL_malloc(buf_len);
+  EC_POINT_point2oct(ec_group, p_generator, POINT_CONVERSION_UNCOMPRESSED, buf,
+                     buf_len, NULL);
 
-    order = EC_GROUP_get0_order(ec_group);
-    modulo = EC_GROUP_get0_field(ec_group);
-    
-    // free the memory allocated for buf
-    OPENSSL_free(buf);
+  // create a BIGNUM from the byte array
+  b_generator = BN_bin2bn(buf, buf_len, NULL);
+  if (!b_generator) {
+    printf("Error creating BIGNUM from byte array\n");
+    return;
+  }
 
+  order = EC_GROUP_get0_order(ec_group);
+  modulo = EC_GROUP_get0_field(ec_group);
+
+  // free the memory allocated for buf
+  OPENSSL_free(buf);
 }
 
+BIGNUM* generate_rand() {
+  BIGNUM* rand_num;
+  unsigned char buffer[NUM_BYTES];
 
-BIGNUM* generate_rand()
-    {
-    BIGNUM* rand_num;
-    unsigned char buffer[NUM_BYTES];
+  // generate random bytes
+  if (RAND_bytes(buffer, NUM_BYTES) != 1) {
+    printf("Error generating random bytes\n");
+    exit(EXIT_FAILURE);
+  }
 
-    // generate random bytes
-    if (RAND_bytes(buffer, NUM_BYTES) != 1) {
-        printf("Error generating random bytes\n");
-        exit(EXIT_FAILURE);
-    }
+  // convert buffer to a bignum
+  rand_num = BN_bin2bn(buffer, NUM_BYTES, NULL);
 
-    // convert buffer to a bignum
-    rand_num = BN_bin2bn(buffer, NUM_BYTES, NULL);
-    
-    BN_CTX* ctx = BN_CTX_new();
-    BIGNUM *result = BN_new();
-    BN_mod(result, rand_num, order, ctx);
+  BN_CTX* ctx = BN_CTX_new();
+  BIGNUM* result = BN_new();
+  BN_mod(result, rand_num, order, ctx);
 
-    
-    OPENSSL_cleanse(buffer, sizeof(buffer)); // free the memory allocated for buffer
+  OPENSSL_cleanse(buffer,
+                  sizeof(buffer));  // free the memory allocated for buffer
 
-    return result;
-    }
+  return result;
+}

@@ -1,39 +1,34 @@
-#include <stdint.h>
 #include <openssl/bn.h>
+#include <stdint.h>
+
 #include "setup.h"
 
+typedef struct {
+  BIGNUM* m;
+  BIGNUM* R;
+  participant* S;
 
-typedef struct
-{
-    BIGNUM* m;
-    BIGNUM* R;
-    participant* S;
+} tuple_packet;
 
-}tuple_packet;
+typedef struct {
+  /* data
 
+  # message
+  # public key
+  # participal indexes list []
+  # commitments pair list []
+  # nonce commitment pair list []
 
-typedef struct
-{
-    /* data
-
-    # message
-    # public key
-    # participal indexes list []
-    # commitments pair list []
-    # nonce commitment pair list []
-
-    */
-BIGNUM* public_key;
-tuple_packet* tuple;
-uint32_t* rcvd_pub_shares;
-uint32_t* rcvd_sig_shares; 
-size_t len_shares;
+  */
+  BIGNUM* public_key;
+  tuple_packet* tuple;
+  uint32_t* rcvd_pub_shares;
+  uint32_t* rcvd_sig_shares;
+  size_t len_shares;
 
 } aggregator;
 
-
-
-pub_share_packet init_pub_share (participant* p);
+pub_share_packet init_pub_share(participant* p);
 
 bool accept_pub_share(aggregator* reciever, pub_share_packet* packet);
 

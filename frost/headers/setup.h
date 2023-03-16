@@ -34,10 +34,18 @@ typedef struct {
   term* t;
 } poly;
 
-typedef struct {
-  size_t num_packets;
-  pub_commit_packet* rcvd_packets;
+typedef struct Node {
+  struct Node* next;
+  pub_commit_packet* rcvd_packet;
 } rcvd_pub_commits;
+
+typedef struct {
+  char* m;
+  size_t m_size;
+  BIGNUM* R;
+  participant* S;
+  size_t S_size;
+} tuple_packet;
 
 typedef struct {
   int index;
@@ -51,8 +59,10 @@ typedef struct {
   pub_commit_packet* pub_commit;
   pub_share_packet* pub_share;
   poly* func;
-  rcvd_pub_commits* rcvd_commits;
+  rcvd_pub_commits* rcvd_commit_head;
   BIGNUM** rcvd_sec_share;
+  size_t len_rcvd_sec_share;
+  tuple_packet* rcvd_tuple;
 } participant;
 
 /*Pedersen Distributed Key Generation*/

@@ -12,12 +12,24 @@ int main(int argc, char const* argv[]) {
   int participants = 3;
 
   /*Initialize Participants*/
-  participant p0 = {
-      .index = 0, .threshold = threshold, .participants = participants};
-  participant p1 = {
-      .index = 1, .threshold = threshold, .participants = participants};
-  participant p2 = {
-      .index = 2, .threshold = threshold, .participants = participants};
+  participant p0 = {.index = 0,
+                    .threshold = threshold,
+                    .participants = participants,
+                    .pub_commit = NULL,
+                    .rcvd_commit_head = NULL,
+                    .rcvd_sec_share = NULL};
+  participant p1 = {.index = 1,
+                    .threshold = threshold,
+                    .participants = participants,
+                    .pub_commit = NULL,
+                    .rcvd_commit_head = NULL,
+                    .rcvd_sec_share = NULL};
+  participant p2 = {.index = 2,
+                    .threshold = threshold,
+                    .participants = participants,
+                    .pub_commit = NULL,
+                    .rcvd_commit_head = NULL,
+                    .rcvd_sec_share = NULL};
 
   /*Initialize Public Commitments*/
   pub_commit_packet* p0_pub_commit = init_pub_commit(&p0);
@@ -54,20 +66,24 @@ int main(int argc, char const* argv[]) {
   /*### Signing ###*/
 
   participant threshold_set[] = {p0, p1};
-  BIGNUM* message;
-  aggregator agg;
+  char message[] = "Hello";
+  size_t m_len = sizeof(message) / sizeof(char) - 1;
+
+  aggregator agg = {
+      .threshold = threshold, .rcvd_pub_shares = NULL, .rcvd_sig_shares = NULL};
 
   /*Initialize Public Share commitment with nonces*/
-  pub_share_packet p0_pub_share = init_pub_share(&p0);
-  pub_share_packet p1_pub_share = init_pub_share(&p1);
+  pub_share_packet* p0_pub_share = init_pub_share(&p0);
+  pub_share_packet* p1_pub_share = init_pub_share(&p1);
 
-  accept_pub_share(&agg, &p0_pub_share);
-  accept_pub_share(&agg, &p1_pub_share);
+  accept_pub_share(&agg, p0_pub_share);
+  accept_pub_share(&agg, p1_pub_share);
 
-  tuple_packet agg_tuple = init_tuple_packet(&agg, message, threshold_set);
+  tuple_packet* agg_tuple =
+      init_tuple_packet(&agg, message, m_len, threshold_set, threshold);
 
-  accept_tuple(&p0, &agg_tuple);
-  accept_tuple(&p1, &agg_tuple);
+  accept_tuple(&p0, agg_tuple);
+  accept_tuple(&p1, agg_tuple);
 
   BIGNUM* sig_share_p0 = init_sig_share(&p0);
   BIGNUM* sig_share_p1 = init_sig_share(&p1);

@@ -17,19 +17,19 @@ int main(int argc, char const* argv[]) {
                     .participants = participants,
                     .pub_commit = NULL,
                     .rcvd_commit_head = NULL,
-                    .rcvd_sec_share = NULL};
+                    .rcvd_sec_share_head = NULL};
   participant p1 = {.index = 1,
                     .threshold = threshold,
                     .participants = participants,
                     .pub_commit = NULL,
                     .rcvd_commit_head = NULL,
-                    .rcvd_sec_share = NULL};
+                    .rcvd_sec_share_head = NULL};
   participant p2 = {.index = 2,
                     .threshold = threshold,
                     .participants = participants,
                     .pub_commit = NULL,
                     .rcvd_commit_head = NULL,
-                    .rcvd_sec_share = NULL};
+                    .rcvd_sec_share_head = NULL};
 
   /*Initialize Public Commitments*/
   pub_commit_packet* p0_pub_commit = init_pub_commit(&p0);

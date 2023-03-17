@@ -31,9 +31,9 @@ rcvd_pub_commits* create_node_commit(pub_commit_packet* rcvd_packet) {
 }
 
 void insert_node_commit(participant* p, pub_commit_packet* rcvd_packet) {
-  rcvd_pub_commits* new_node = create_node_commit(rcvd_packet);
-  new_node->next = p->rcvd_commit_head;
-  p->rcvd_commit_head = new_node;
+  rcvd_pub_commits* newNode = create_node_commit(rcvd_packet);
+  newNode->next = p->rcvd_commit_head;
+  p->rcvd_commit_head = newNode;
 }
 
 pub_commit_packet* search_node_commit(rcvd_pub_commits* head,
@@ -47,10 +47,26 @@ pub_commit_packet* search_node_commit(rcvd_pub_commits* head,
   printf("Sender's public commitment were not found!");
 }
 
+rcvd_sec_shares* create_node_share(BIGNUM* sec_share) {
+  rcvd_sec_shares* newNode = (rcvd_sec_shares*)malloc(sizeof(rcvd_sec_shares));
+  newNode->rcvd_share = OPENSSL_malloc(sizeof(BIGNUM*));
+  newNode->next = NULL;
+
+  newNode->rcvd_share = BN_new();
+  BN_copy(newNode->rcvd_share, sec_share);
+
+  return newNode;
+}
+
+void insert_node_share(participant* p, BIGNUM* sec_share) {
+  rcvd_sec_shares* newNode = create_node_share(sec_share);
+
+  newNode->next = p->rcvd_sec_share_head;
+  p->rcvd_sec_share_head = newNode;
+}
+
 void init_coeff_list(participant* p) {
   /*
-  zavola sa v init_pub_commit
-  funkcia alokuje a ulozi do struktury participant
   #
   # alocate coefficient list []; (size of list is always t)
   # fulfill with random numbers: (a_i_0, . . ., a_i_(t - 1)) <- $ ℤq
@@ -67,13 +83,19 @@ void init_coeff_list(participant* p) {
     p->list->coeff[i] = BN_new();  // Call BN_new() before allocating memory
     BN_copy(p->list->coeff[i], generate_rand());
   }
+
+  printf("\n\nParticipant [%d] has  coeff_list:", p->index);
+  for (int i = 0; i < threshold; i++) {
+    printf("\n%d: ", i);
+    BN_print_fp(stdout, p->list->coeff[i]);
+  }
+  printf("\n\n");
 }
 
 void free_coeff_list(participant* p) {}
 
 pub_commit_packet* init_pub_commit(participant* p) {
   int threshold = p->threshold;
-
   /* call init_coeff_list */
   init_coeff_list(p);
 
@@ -91,6 +113,13 @@ pub_commit_packet* init_pub_commit(participant* p) {
     BN_copy(p->pub_commit->commit[j], result);
   }
 
+  printf("\nParticipant [%d] pub_commit:\n", p->index);
+  // Print the array of BIGNUM* values
+  for (int i = 0; i < threshold; i++) {
+    printf("[%d]:  ", i);
+    BN_print_fp(stdout, p->pub_commit->commit[i]);
+    printf("\n");
+  }
   return p->pub_commit;
 }
 
@@ -110,12 +139,12 @@ bool accept_pub_commit(participant* receiver, pub_commit_packet* pub_commit) {
   return false;
 }
 
-BIGNUM* init_sec_share(participant* sender, int receiver_index) {
+BIGNUM* init_sec_share(participant* sender, int reciever_index) {
   int threshold = sender->threshold;
   BIGNUM* result = NULL;
   // convert integer r_index to bignum
   BIGNUM* b_index = BN_new();
-  BN_set_word(b_index, receiver_index);
+  BN_set_word(b_index, reciever_index);
 
   sender->func = malloc(sizeof(poly));
   sender->func->n = threshold;
@@ -134,6 +163,18 @@ BIGNUM* init_sec_share(participant* sender, int receiver_index) {
     BN_set_word(b_expo, i);
     sender->func->t[i].exponent = b_expo;
   }
+
+  printf("\n\n Polynomial of P [%d]: ", sender->index);
+  for (int i = 0; i < threshold; i++) {
+    BN_print_fp(stdout, sender->func->t[i].coefficient);
+    printf(" x^");
+    BN_print_fp(stdout, sender->func->t[i].exponent);
+
+    if (i < threshold - 1) {
+      printf(" + ");
+    }
+  }
+  printf("\n");
 
   /*
   # 2. Calculate a polynomial
@@ -154,28 +195,26 @@ BIGNUM* init_sec_share(participant* sender, int receiver_index) {
       BN_mod_add(result, result, multi_product, order, BN_CTX_new());
     }
   }
+
+  // print sig share
+  printf("\n\n Participant [%d] create sec-share for participant [%d]:\n ",
+         sender->index, reciever_index);
+  BN_print_fp(stdout, result);
+
   return result;
 }
 
 bool accept_sec_share(participant* receiver, int sender_index,
                       BIGNUM* sec_share) {
-  int participants = receiver->participants;
   int threshold = receiver->threshold;
   pub_commit_packet* sender_pub_commit =
       search_node_commit(receiver->rcvd_commit_head, sender_index);
-  receiver->len_rcvd_sec_share = (receiver->participants) - 1;
 
-  // Allocate memory for array & set it to default
-  if (receiver->rcvd_sec_share == NULL) {
-    receiver->rcvd_sec_share = OPENSSL_malloc(participants * sizeof(BIGNUM*));
-    for (int i = 0; i < participants; i++) {
-      receiver->rcvd_sec_share[i] = BN_new();
-    }
+  if (receiver->rcvd_sec_share_head == NULL) {
+    create_node_share(sec_share);
+  } else {
+    insert_node_share(receiver, sec_share);
   }
-
-  // Save sent sec_share to rcvd_sec_share[]
-  BN_copy(receiver->rcvd_sec_share[sender_index], sec_share);
-
   /*
   # 2. Every participant Pi verifies the share they received from each other
   participant Pj , where i != j, by verifying: # # G ^ f_j(i) ≟ ∏ 𝜙_j_k ^ (i ^ k
@@ -237,7 +276,7 @@ bool gen_keys(participant* p) {
   # 3. Each participant then calculates public key:
   # Y = ∏ 𝜙_j_0
   */
-  for (int i = 0; i < p->rcvd_commits->num_packets; i++) {
+  for (int i = 0; i < p->rcvd_commit_head->num_packets; i++) {
     if (p->rcvd_commits->rcvd_packets[i].sender_index != -1) {
       BN_mod_mul(res_pub_key, res_pub_key,
                  p->rcvd_commits->rcvd_packets[i].commit[0], order,

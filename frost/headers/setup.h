@@ -34,10 +34,15 @@ typedef struct {
   term* t;
 } poly;
 
-typedef struct Node {
-  struct Node* next;
+typedef struct node_commit {
+  struct node_commit* next;
   pub_commit_packet* rcvd_packet;
 } rcvd_pub_commits;
+
+typedef struct node_share {
+  struct node_share* next;
+  BIGNUM* rcvd_share;
+} rcvd_sec_shares;
 
 typedef struct {
   char* m;
@@ -60,7 +65,7 @@ typedef struct {
   pub_share_packet* pub_share;
   poly* func;
   rcvd_pub_commits* rcvd_commit_head;
-  BIGNUM** rcvd_sec_share;
+  rcvd_sec_shares* rcvd_sec_share_head;
   size_t len_rcvd_sec_share;
   tuple_packet* rcvd_tuple;
 } participant;

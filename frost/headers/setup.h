@@ -21,7 +21,8 @@ typedef struct {
 
 typedef struct {
   int sender_index;
-  BIGNUM** pub_share;
+  BIGNUM* verify_share;
+  BIGNUM* pub_share;
 } pub_share_packet;
 
 typedef struct {
@@ -66,7 +67,6 @@ typedef struct {
   poly* func;
   rcvd_pub_commits* rcvd_commit_head;
   rcvd_sec_shares* rcvd_sec_share_head;
-  size_t len_rcvd_sec_share;
   tuple_packet* rcvd_tuple;
 } participant;
 

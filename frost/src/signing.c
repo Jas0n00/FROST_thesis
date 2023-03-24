@@ -24,10 +24,12 @@ pub_share_packet* init_pub_share(participant* p) {
   # broadcast nonce commitments pair list to aggregator[];
   */
   p->pub_share = malloc(sizeof(pub_share_packet));
-  p->pub_share->sender_index = p->index;
-  p->pub_share->pub_share = OPENSSL_malloc(sizeof(BIGNUM*));
   p->pub_share->pub_share = BN_new();
+  p->pub_share->verify_share = BN_new();
+  p->nonce = BN_new();
+  p->pub_share->sender_index = p->index;
 
+  BN_copy(p->pub_share->verify_share, p->verify_share);
   BN_copy(p->nonce, generate_rand());
   BN_mod_exp(p->pub_share->pub_share, b_generator, p->nonce, order,
              BN_CTX_new());
@@ -35,72 +37,45 @@ pub_share_packet* init_pub_share(participant* p) {
   return p->pub_share;
 }
 
-/*Signing stage*/
+rcvd_pub_shares* create_node_pub_share(pub_share_packet* rcvd_packet) {
+  rcvd_pub_shares* newNode = (rcvd_pub_shares*)malloc(sizeof(rcvd_pub_shares));
+  newNode->rcvd_packets = malloc(sizeof(pub_share_packet));
+  newNode->next = NULL;
+  newNode->rcvd_packets->verify_share = BN_new();
+  newNode->rcvd_packets->pub_share = BN_new();
 
-bool accept_pub_share(aggregator* receiver, pub_share_packet* packet) {
-  int threshold = receiver->threshold;
-  int sender_index = packet->sender_index;
+  newNode->rcvd_packets->sender_index = rcvd_packet->sender_index;
+  BN_copy(newNode->rcvd_packets->pub_share, rcvd_packet->pub_share);
+  BN_copy(newNode->rcvd_packets->verify_share, rcvd_packet->verify_share);
 
-  if (receiver->rcvd_pub_shares == NULL) {
-    receiver->rcvd_pub_shares = malloc(sizeof(rcvd_pub_shares));
-    receiver->rcvd_pub_shares->num_pub_shares = threshold;
-    receiver->rcvd_pub_shares->rcvd_packets =
-        OPENSSL_malloc(sizeof(pub_share_packet) * threshold);
-
-    for (int i = 0; i < threshold; i++) {
-      receiver->rcvd_pub_shares->rcvd_packets[i].sender_index = -1;
-      receiver->rcvd_pub_shares->rcvd_packets[i].pub_share = NULL;
-    }
-  }
-
-  if (receiver->rcvd_pub_shares->rcvd_packets[sender_index].pub_share = NULL) {
-    receiver->rcvd_pub_shares->rcvd_packets[sender_index].sender_index =
-        packet->sender_index;
-    receiver->rcvd_pub_shares->rcvd_packets[sender_index].pub_share = BN_new();
-    BN_copy(receiver->rcvd_pub_shares->rcvd_packets[sender_index].pub_share,
-            packet->pub_share);
-    return true;
-  } else {
-    printf("Accepting public share failed! ");
-    return false;
-  }
+  return newNode;
 }
 
-BIGNUM* lagrange_coefficient(participant* p) {
-  BIGNUM *numerator, *denominator, *res, *tmp;
-  int i, index;
-  int num_participants = p->rcvd_tuple->S_size;
-  // Initialize BIGNUMs
-  numerator = BN_new();
-  denominator = BN_new();
-  res = BN_new();
-  tmp = BN_new();
+void insert_node_pub_share(aggregator* agg, pub_share_packet* rcvd_packet) {
+  rcvd_pub_shares* newNode = create_node_pub_share(rcvd_packet);
+  newNode->next = agg->rcvd_pub_share_head;
+  agg->rcvd_pub_share_head = newNode;
+}
 
-  // Set values for numerator, denominator and q
-  BN_one(numerator);
-  BN_one(denominator);
-
-  for (i = 0; i < num_participants; i++) {
-    index = p->rcvd_tuple->S[i].index;
-    if (index == p->index) {
-      continue;
-    }
-    BN_mul_word(numerator, index);
-    BN_sub(tmp, BN_new_word(index), BN_new_word(p->index));
-    BN_mul(denominator, denominator, tmp, NULL);
+bool accept_pub_share(aggregator* receiver, pub_share_packet* packet) {
+  if (receiver->rcvd_pub_share_head == NULL) {
+    receiver->rcvd_pub_share_head = create_node_pub_share(packet);
+    return true;
+  } else {
+    insert_node_pub_share(receiver, packet);
+    return true;
   }
+  return false;
+}
 
-  BN_mod_inverse(tmp, denominator, order, NULL);
-  BN_mul(res, numerator, tmp, NULL);
-  BN_mod(res, res, order, NULL);
-
-  // Free BIGNUMs
-  BN_free(numerator);
-  BN_free(denominator);
-  BN_free(res);
-  BN_free(tmp);
-
-  return res;
+bool search_pub_share(rcvd_pub_shares* head, int sender_index) {
+  rcvd_pub_commits* current = head;  // Initialize current
+  while (current != NULL) {
+    if (current->rcvd_packet->sender_index == sender_index) return true;
+    current = current->next;
+  }
+  printf("Sender's public share were not found!");
+  return false;
 }
 
 bool R_pub_commit_compute(aggregator* a, participant* set, int set_size) {
@@ -110,29 +85,30 @@ bool R_pub_commit_compute(aggregator* a, participant* set, int set_size) {
  them.
  #
  */
-  int size_check = 0;
+  bool all_found = true;
+  rcvd_pub_shares* currect = a->rcvd_pub_share_head;
 
   for (int i = 0; i < set_size; i++) {
-    for (int j = 0; j < a->rcvd_pub_shares->num_pub_shares; j++) {
-      if (set[i].index == a->rcvd_pub_shares->rcvd_packets[j].sender_index) {
-        size_check++;
-      }
+    if (!search_pub_share(a->rcvd_pub_share_head, set[i].index)) {
+      all_found = false;
+      break;
     }
   }
 
-  if (size_check == set_size) {
+  if (all_found) {
     BIGNUM* res_R_pub_commit = BN_new();
-    BN_set_word(res_R_pub_commit, 1);
+    BN_zero(res_R_pub_commit);
 
-    for (int j = 0; j < a->rcvd_pub_shares->num_pub_shares; j++) {
+    while (currect != NULL) {
       BN_mod_add(res_R_pub_commit, res_R_pub_commit,
-                 a->rcvd_pub_shares->rcvd_packets[j].pub_share, order,
+                 a->rcvd_pub_share_head->rcvd_packets->pub_share, order,
                  BN_CTX_new());
+      currect = currect->next;
     }
     a->R_pub_commit = res_R_pub_commit;
     return true;
   } else {
-    printf("Mismatch of received public shares!");
+    printf("Mismatch of signing participant and received shares!");
     return false;
   }
 }
@@ -142,9 +118,11 @@ tuple_packet* init_tuple_packet(aggregator* a, char* m, size_t m_size,
   if (R_pub_commit_compute(a, set, set_size)) {
     a->tuple = malloc(sizeof(tuple_packet));
     a->tuple->m = malloc(sizeof(char) * m_size);
+    a->tuple->S = malloc(sizeof(participant) * set_size);
+    a->tuple->R = BN_new();
+
     a->tuple->m_size = m_size;
     BN_copy(a->tuple->R, a->R_pub_commit);
-    a->tuple->S = malloc(sizeof(participant) * set_size);
     a->tuple->S_size = a->threshold;
 
     for (int i = 0; i < set_size; i++) {
@@ -159,46 +137,90 @@ tuple_packet* init_tuple_packet(aggregator* a, char* m, size_t m_size,
 }
 bool accept_tuple(participant* receiver, tuple_packet* packet) {
   receiver->rcvd_tuple = malloc(sizeof(tuple_packet));
-  BN_copy(receiver->rcvd_tuple->m, packet->m);
+  receiver->rcvd_tuple->S = malloc(sizeof(participant) * packet->S_size);
+  receiver->rcvd_tuple->m = malloc(sizeof(char) * packet->m_size + 1);
+  receiver->rcvd_tuple->R = BN_new();
+
   BN_copy(receiver->rcvd_tuple->R, packet->R);
   receiver->rcvd_tuple->S_size = packet->S_size;
-  receiver->rcvd_tuple->S = malloc(sizeof(participant) * packet->S_size);
+  receiver->rcvd_tuple->m_size = packet->m_size;
 
   for (int i = 0; i < packet->S_size; i++) {
     receiver->rcvd_tuple->S[i] = packet->S[i];
   }
 
+  for (int i = 0; i < packet->m_size; i++) {
+    receiver->rcvd_tuple->m[i] = packet->m[i];
+  }
   return true;
 }
 
-BIGNUM* init_sig_share(participant* p) {
-  /*
-  #
-  # 1. checks to make sure that D_ij corresponds to a valid unused nonce d_ij
-  # 2. Each P_i computes the challenge c = H(m, R).
-  # 3. Each Pi computes their response z_i, using their long-lived secret share
-  s_i where: zi = di + λi * si *c, using S to determine λi (S is set of
-  idetifiers of t participant) # 4. sent response z_i to aggregator
-  */
-  size_t m_size = p->rcvd_tuple->m_size;
-  size_t R_size = BN_num_bytes(p->rcvd_tuple->R);
-  char* R_commit_converted = BN_bn2hex(p->rcvd_tuple->R);
-  char hex_m[2 * m_size + 1];
-  char* hash_string = malloc(m_size + R_size + 1);
+BIGNUM* lagrange_coefficient(participant* p) {
+  int num_participants = p->rcvd_tuple->S_size;
 
-  for (int i = 0; i < m_size; i++) {
-    sprintf(&hex_m[2 * i], "%02x", p->rcvd_tuple->m[i]);
+  // Initialize BIGNUMs
+  BIGNUM* numerator = BN_new();
+  BIGNUM* denominator = BN_new();
+  BIGNUM* res = BN_new();
+  BIGNUM* tmp = BN_new();
+
+  // Set values for numerator, denominator
+  BN_one(numerator);
+  BN_one(denominator);
+
+  for (int i = 0; i < num_participants; i++) {
+    int index = p->rcvd_tuple->S[i].index;
+    BIGNUM* b_index = BN_new();
+    BN_set_word(b_index, index);
+    BIGNUM* b_p_index = BN_new();
+    BN_set_word(b_p_index, p->index);
+
+    if (index == p->index) {
+      continue;
+    }
+    BN_mul_word(numerator, index);
+    BN_sub(tmp, b_index, b_p_index);
+    BN_mul(denominator, denominator, tmp, BN_CTX_new());
   }
 
-  strcpy(hash_string, hex_m);
-  strcat(hash_string, R_commit_converted);
+  BN_mod_inverse(tmp, denominator, order, BN_CTX_new());
+  BN_mul(res, numerator, tmp, BN_CTX_new());
+  BN_mod(res, res, order, BN_CTX_new());
+
+  return res;
+}
+
+BIGNUM* init_sig_share(participant* p) {
+  char* R_hex = BN_bn2dec(p->rcvd_tuple->R);
+  size_t hash_len = strlen(p->rcvd_tuple->m) + strlen(R_hex);
+  char* concat = (char*)malloc(hash_len + 1);
+
+  printf("hash_len: %zu \n", hash_len);
+
+  strcpy(concat, p->rcvd_tuple->m);
+  printf("R_hex: %s \n", concat);
+  strcat(concat, R_hex);
+  printf("R_hex: %s \n", concat);
 
   unsigned char hash[SHA256_DIGEST_LENGTH];
 
-  SHA256_CTX sha256;
-  SHA256_Init(&sha256);
-  SHA256_Update(&sha256, hash_string, strlen(hash_string));
-  SHA256_Final(hash, &sha256);
+  EVP_MD_CTX* mdctx;
+  const EVP_MD* md;
+  md = EVP_sha256();
+
+  mdctx = EVP_MD_CTX_new();
+  EVP_DigestInit_ex(mdctx, md, NULL);
+  EVP_DigestUpdate(mdctx, concat, hash_len);
+  EVP_DigestFinal_ex(mdctx, hash, NULL);
+  EVP_MD_CTX_free(mdctx);
+
+  char hex_hash[SHA256_DIGEST_LENGTH * 2 + 1];
+  for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+    sprintf(&hex_hash[i * 2], "%02x", hash[i]);
+  }
+  hex_hash[SHA256_DIGEST_LENGTH * 2] = '\0';
+
+  printf("SHA256 hash value: %s\n", hex_hash);
 }
 
 bool accept_sig_share(aggregator* reciever, BIGNUM* sig_share) {

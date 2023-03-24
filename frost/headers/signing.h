@@ -3,9 +3,9 @@
 
 #include "setup.h"
 
-typedef struct {
-  size_t num_pub_shares;
+typedef struct node_pub_share {
   pub_share_packet* rcvd_packets;
+  struct node_pub_share* next;
 } rcvd_pub_shares;
 
 typedef struct {
@@ -22,7 +22,7 @@ typedef struct {
   BIGNUM* public_key;
   BIGNUM* R_pub_commit;
   tuple_packet* tuple;
-  rcvd_pub_shares* rcvd_pub_shares;
+  rcvd_pub_shares* rcvd_pub_share_head;
   BIGNUM* rcvd_sig_shares;
   size_t len_shares;
 

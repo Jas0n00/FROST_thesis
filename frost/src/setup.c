@@ -184,15 +184,14 @@ BIGNUM* init_sec_share(participant* sender, int reciever_index) {
     BIGNUM* expo_product = BN_new();
     BIGNUM* multi_product = BN_new();
 
-    BN_mod_exp(expo_product, b_index, sender->func->t[i].exponent, order,
-               BN_CTX_new());
-    BN_mod_mul(multi_product, sender->func->t[i].coefficient, expo_product,
-               order, BN_CTX_new());
+    BN_exp(expo_product, b_index, sender->func->t[i].exponent, BN_CTX_new());
+    BN_mul(multi_product, sender->func->t[i].coefficient, expo_product,
+           BN_CTX_new());
     if (result == NULL) {
       result = BN_new();
       BN_copy(result, multi_product);
     } else {
-      BN_mod_add(result, result, multi_product, order, BN_CTX_new());
+      BN_add(result, result, multi_product);
     }
   }
 
@@ -211,7 +210,7 @@ bool accept_sec_share(participant* receiver, int sender_index,
       search_node_commit(receiver->rcvd_commit_head, sender_index);
 
   if (receiver->rcvd_sec_share_head == NULL) {
-    create_node_share(sec_share);
+    receiver->rcvd_sec_share_head = create_node_share(sec_share);
   } else {
     insert_node_share(receiver, sec_share);
   }
@@ -251,40 +250,59 @@ bool accept_sec_share(participant* receiver, int sender_index,
   BN_print_fp(stdout, res_commits);
 }
 
+void gen_sec_share(participant* p, rcvd_sec_shares* head, BIGNUM* sum) {
+  if (!head) {
+    BN_copy(p->secret_share, sum);
+    return;
+  }
+  gen_sec_share(p, head->next, sum);
+  BN_mod_add(sum, sum, head->rcvd_share, order, BN_CTX_new());
+}
+
+void gen_pub_key(participant* p, rcvd_pub_commits* head, BIGNUM* self_commit) {
+  BIGNUM* product = BN_new();
+  BN_copy(product, self_commit);
+
+  while (head != NULL) {
+    BN_mod_mul(product, product, head->rcvd_packet->commit[0], order,
+               BN_CTX_new());
+    head = head->next;
+  }
+
+  BN_copy(p->public_key, product);
+}
+
 bool gen_keys(participant* p) {
+  p->secret_share = BN_new();
+  p->verify_share = BN_new();
+  p->public_key = BN_new();
   /*
   # 1. will create long-lived secret share:
   # s_i = ∑ f_j(i), 1 ≤ j ≤ n
   # sum of share list [] -> store secret share;
   */
-  BIGNUM* res_sec_share = BN_new();
-  BIGNUM* res_ver_share = BN_new();
-  BIGNUM* res_pub_key = BN_new();
-  BN_set_word(res_sec_share, 0);
-  BN_set_word(res_pub_key, 1);
 
-  for (int i = 0; i < p->len_rcvd_sec_share; i++) {
-    BN_mod_add(res_sec_share, res_sec_share, p->rcvd_sec_share[i], order,
-               BN_CTX_new());
-  }
+  gen_sec_share(p, p->rcvd_sec_share_head, p->secret_share);
+
   /*
   # 2. Each participant then calculates their own public verification share:
   # Y_i = G ^ s_i
   */
-  BN_mod_exp(res_ver_share, b_generator, res_sec_share, order, BN_CTX_new());
+
+  BN_mod_exp(p->verify_share, b_generator, p->secret_share, order,
+             BN_CTX_new());
+
   /*
   # 3. Each participant then calculates public key:
   # Y = ∏ 𝜙_j_0
   */
-  for (int i = 0; i < p->rcvd_commit_head->num_packets; i++) {
-    if (p->rcvd_commits->rcvd_packets[i].sender_index != -1) {
-      BN_mod_mul(res_pub_key, res_pub_key,
-                 p->rcvd_commits->rcvd_packets[i].commit[0], order,
-                 BN_CTX_new());
-    }
-  }
 
-  p->secret_share = res_pub_key;
-  p->verify_share = res_ver_share;
-  p->public_key = res_pub_key;
+  gen_pub_key(p, p->rcvd_commit_head, p->pub_commit->commit[0]);
+
+  printf("\n\n Keys:\n");
+  BN_print_fp(stdout, p->secret_share);
+  BN_print_fp(stdout, p->verify_share);
+  BN_print_fp(stdout, p->public_key);
+
+  return true;
 }

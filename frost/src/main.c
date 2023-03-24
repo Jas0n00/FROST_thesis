@@ -67,10 +67,11 @@ int main(int argc, char const* argv[]) {
 
   participant threshold_set[] = {p0, p1};
   char message[] = "Hello";
-  size_t m_len = sizeof(message) / sizeof(char) - 1;
+  size_t m_len = sizeof(message) / sizeof(char);
 
-  aggregator agg = {
-      .threshold = threshold, .rcvd_pub_shares = NULL, .rcvd_sig_shares = NULL};
+  aggregator agg = {.threshold = threshold,
+                    .rcvd_pub_share_head = NULL,
+                    .rcvd_sig_shares = NULL};
 
   /*Initialize Public Share commitment with nonces*/
   pub_share_packet* p0_pub_share = init_pub_share(&p0);

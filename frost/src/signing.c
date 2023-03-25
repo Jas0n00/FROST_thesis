@@ -51,6 +51,17 @@ rcvd_pub_shares* create_node_pub_share(pub_share_packet* rcvd_packet) {
   return newNode;
 }
 
+pub_share_packet* search_node_pub_share(rcvd_pub_shares* head,
+                                        int sender_index) {
+  rcvd_pub_shares* current = head;  // Initialize current
+  while (current != NULL) {
+    if (current->rcvd_packets->sender_index == sender_index)
+      return current->rcvd_packets;
+    current = current->next;
+  }
+  printf("Sender's public commitment were not found!");
+}
+
 void insert_node_pub_share(aggregator* agg, pub_share_packet* rcvd_packet) {
   rcvd_pub_shares* newNode = create_node_pub_share(rcvd_packet);
   newNode->next = agg->rcvd_pub_share_head;
@@ -138,7 +149,7 @@ tuple_packet* init_tuple_packet(aggregator* a, char* m, size_t m_size,
 bool accept_tuple(participant* receiver, tuple_packet* packet) {
   receiver->rcvd_tuple = malloc(sizeof(tuple_packet));
   receiver->rcvd_tuple->S = malloc(sizeof(participant) * packet->S_size);
-  receiver->rcvd_tuple->m = malloc(sizeof(char) * packet->m_size + 1);
+  receiver->rcvd_tuple->m = malloc(sizeof(char) * packet->m_size);
   receiver->rcvd_tuple->R = BN_new();
 
   BN_copy(receiver->rcvd_tuple->R, packet->R);
@@ -155,8 +166,8 @@ bool accept_tuple(participant* receiver, tuple_packet* packet) {
   return true;
 }
 
-BIGNUM* lagrange_coefficient(participant* p) {
-  int num_participants = p->rcvd_tuple->S_size;
+BIGNUM* lagrange_coefficient(tuple_packet* tuple, int p_index) {
+  int num_participants = tuple->S_size;
 
   // Initialize BIGNUMs
   BIGNUM* numerator = BN_new();
@@ -169,13 +180,13 @@ BIGNUM* lagrange_coefficient(participant* p) {
   BN_one(denominator);
 
   for (int i = 0; i < num_participants; i++) {
-    int index = p->rcvd_tuple->S[i].index;
+    int index = tuple->S[i].index;
     BIGNUM* b_index = BN_new();
     BN_set_word(b_index, index);
     BIGNUM* b_p_index = BN_new();
-    BN_set_word(b_p_index, p->index);
+    BN_set_word(b_p_index, p_index);
 
-    if (index == p->index) {
+    if (index == p_index) {
       continue;
     }
     BN_mul_word(numerator, index);
@@ -190,18 +201,17 @@ BIGNUM* lagrange_coefficient(participant* p) {
   return res;
 }
 
-BIGNUM* init_sig_share(participant* p) {
-  char* R_hex = BN_bn2dec(p->rcvd_tuple->R);
-  size_t hash_len = strlen(p->rcvd_tuple->m) + strlen(R_hex);
+BIGNUM* hash_func(BIGNUM* R, char* m) {
+  char* R_hex = BN_bn2dec(R);
+  size_t hash_len = strlen(m) + strlen(R_hex);
   char* concat = (char*)malloc(hash_len + 1);
 
   printf("hash_len: %zu \n", hash_len);
 
-  strcpy(concat, p->rcvd_tuple->m);
+  strcpy(concat, m);
   printf("R_hex: %s \n", concat);
   strcat(concat, R_hex);
   printf("R_hex: %s \n", concat);
-
   unsigned char hash[SHA256_DIGEST_LENGTH];
 
   EVP_MD_CTX* mdctx;
@@ -214,25 +224,106 @@ BIGNUM* init_sig_share(participant* p) {
   EVP_DigestFinal_ex(mdctx, hash, NULL);
   EVP_MD_CTX_free(mdctx);
 
-  char hex_hash[SHA256_DIGEST_LENGTH * 2 + 1];
-  for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-    sprintf(&hex_hash[i * 2], "%02x", hash[i]);
-  }
-  hex_hash[SHA256_DIGEST_LENGTH * 2] = '\0';
+  BIGNUM* hash_bn = BN_new();
+  BN_bin2bn(hash, SHA256_DIGEST_LENGTH, hash_bn);
 
-  printf("SHA256 hash value: %s\n", hex_hash);
+  return hash_bn;
 }
 
-bool accept_sig_share(aggregator* reciever, BIGNUM* sig_share) {
+BIGNUM* init_sig_share(participant* p) {
+  BIGNUM* sig_share = BN_new();
+  BIGNUM* hash = BN_new();
+  BIGNUM* tmp = BN_new();
+  BN_one(tmp);
+
+  hash = hash_func(p->rcvd_tuple->R, p->rcvd_tuple->m);
+
+  BN_mul(tmp, tmp, hash, BN_CTX_new());
+  BN_mul(tmp, tmp, p->secret_share, BN_CTX_new());
+  BN_mul(tmp, tmp, lagrange_coefficient(p->rcvd_tuple, p->index), BN_CTX_new());
+  BN_add(sig_share, p->nonce, tmp);
+
+  return sig_share;
+}
+
+rcvd_sig_shares* create_node_sig_share(BIGNUM* sig_share) {
+  rcvd_sig_shares* newNode = (rcvd_sig_shares*)malloc(sizeof(rcvd_sig_shares));
+  newNode->rcvd_share = OPENSSL_malloc(sizeof(BIGNUM*));
+  newNode->next = NULL;
+
+  newNode->rcvd_share = BN_new();
+  BN_copy(newNode->rcvd_share, sig_share);
+
+  return newNode;
+}
+
+void insert_node_sig_share(aggregator* agg, BIGNUM* sig_share) {
+  rcvd_sig_shares* newNode = create_node_sig_share(sig_share);
+
+  newNode->next = agg->rcvd_sig_shares_head;
+  agg->rcvd_sig_shares_head = newNode;
+}
+
+bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
+                      int sender_index) {
+  if (receiver->rcvd_sig_shares_head == NULL) {
+    receiver->rcvd_sig_shares_head = create_node_sig_share(sig_share);
+  } else {
+    insert_node_sig_share(receiver, sig_share);
+  }
+
   /*
   # Verifies the validity of each response by checking g
   zi ?= Di * Yi ^ (c * λi)
   */
+
+  pub_share_packet* sender_pub_share =
+      search_node_pub_share(receiver->rcvd_pub_share_head, sender_index);
+
+  BIGNUM* res_G_over_zi = BN_new();
+  receiver->hash = BN_new();
+  BIGNUM* tmp = BN_new();
+  BIGNUM* Yi = BN_new();
+  BIGNUM* Di = BN_new();
+  BIGNUM* c = BN_new();
+  BIGNUM* lambda = BN_new();
+  BIGNUM* res_power = BN_new();
+  Yi = sender_pub_share->verify_share;
+  Di = sender_pub_share->pub_share;
+  c = hash_func(receiver->R_pub_commit, receiver->tuple->m);
+  BN_copy(receiver->hash, c);
+
+  for (int i = 0; i < receiver->tuple->S_size; i++) {
+    if (receiver->tuple->S[i].index == sender_index) {
+      lambda = lagrange_coefficient(receiver->tuple, sender_index);
+    }
+  }
+
+  BN_mod_exp(res_G_over_zi, b_generator, sig_share, order, BN_CTX_new());
+
+  BN_mul(res_power, c, lambda, BN_CTX_new());
+  BN_mod_exp(tmp, Yi, res_power, order, BN_CTX_new());
+  BN_mod_mul(tmp, tmp, Di, order, BN_CTX_new());
 }
 
-BIGNUM* signature(aggregator* p) {
+BIGNUM* gen_signature(rcvd_sig_shares* head, BIGNUM* signature) {
+  if (!head) {
+    return signature;
+  }
+  gen_signature(head->next, signature);
+  BN_mod_add(signature, signature, head->rcvd_share, order, BN_CTX_new());
+}
+
+signature_packet signature(aggregator* agg) {
   /*
   # 1. Compute the group’s response z = ∑ z_i
   # 2. Publish the signature σ = (z, c) along with the message m
   */
+  BIGNUM* signature = BN_new();
+
+  signature = gen_signature(agg->rcvd_sig_shares_head, signature);
+
+  signature_packet sig_packet = {.hash = agg->hash, .signature = signature};
+
+  return sig_packet;
 }

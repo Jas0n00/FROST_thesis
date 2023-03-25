@@ -71,7 +71,7 @@ int main(int argc, char const* argv[]) {
 
   aggregator agg = {.threshold = threshold,
                     .rcvd_pub_share_head = NULL,
-                    .rcvd_sig_shares = NULL};
+                    .rcvd_sig_shares_head = NULL};
 
   /*Initialize Public Share commitment with nonces*/
   pub_share_packet* p0_pub_share = init_pub_share(&p0);
@@ -89,9 +89,9 @@ int main(int argc, char const* argv[]) {
   BIGNUM* sig_share_p0 = init_sig_share(&p0);
   BIGNUM* sig_share_p1 = init_sig_share(&p1);
 
-  accept_sig_share(&agg, sig_share_p0);
-  accept_sig_share(&agg, sig_share_p1);
+  accept_sig_share(&agg, sig_share_p0, p0.index);
+  accept_sig_share(&agg, sig_share_p1, p1.index);
 
-  BIGNUM* sig = signature(&agg);
+  signature_packet sig = signature(&agg);
   return 0;
 }

@@ -8,6 +8,16 @@ typedef struct node_pub_share {
   struct node_pub_share* next;
 } rcvd_pub_shares;
 
+typedef struct node_sig_share {
+  BIGNUM* rcvd_share;
+  struct node_sig_share* next;
+} rcvd_sig_shares;
+
+typedef struct {
+  BIGNUM* signature;
+  BIGNUM* hash;
+} signature_packet;
+
 typedef struct {
   /* data
 
@@ -21,9 +31,10 @@ typedef struct {
   int threshold;
   BIGNUM* public_key;
   BIGNUM* R_pub_commit;
+  BIGNUM* hash;
   tuple_packet* tuple;
   rcvd_pub_shares* rcvd_pub_share_head;
-  BIGNUM* rcvd_sig_shares;
+  rcvd_sig_shares* rcvd_sig_shares_head;
   size_t len_shares;
 
 } aggregator;
@@ -39,6 +50,7 @@ bool accept_tuple(participant* receiver, tuple_packet* packet);
 
 BIGNUM* init_sig_share(participant* p);
 
-bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share);
+bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
+                      int sender_index);
 
-BIGNUM* signature(aggregator* a);
+signature_packet signature(aggregator* a);

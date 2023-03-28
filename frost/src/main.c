@@ -93,5 +93,12 @@ int main(int argc, char const* argv[]) {
   accept_sig_share(&agg, sig_share_p1, p1.index);
 
   signature_packet sig = signature(&agg);
+
+  printf("\nSignature: ");
+  BN_print_fp(stdout, sig.signature);
+  printf("\nHash: ");
+  BN_print_fp(stdout, sig.hash);
+
+  verify_signature(&sig, message, p0.public_key);
   return 0;
 }

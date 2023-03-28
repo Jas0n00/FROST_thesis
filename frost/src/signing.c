@@ -23,18 +23,28 @@ pub_share_packet* init_pub_share(participant* p) {
   # 2. stores locally (d_i, ⟨D_i_j⟩;
   # broadcast nonce commitments pair list to aggregator[];
   */
+  BN_CTX* ctx = BN_CTX_new();
   p->pub_share = malloc(sizeof(pub_share_packet));
   p->pub_share->pub_share = BN_new();
   p->pub_share->verify_share = BN_new();
+  p->pub_share->public_key = BN_new();
   p->nonce = BN_new();
   p->pub_share->sender_index = p->index;
 
   BN_copy(p->pub_share->verify_share, p->verify_share);
+  BN_copy(p->pub_share->public_key, p->public_key);
   BN_copy(p->nonce, generate_rand());
-  BN_mod_exp(p->pub_share->pub_share, b_generator, p->nonce, order,
-             BN_CTX_new());
+  BN_mod_exp(p->pub_share->pub_share, b_generator, p->nonce, order, ctx);
 
+  BN_CTX_free(ctx);
   return p->pub_share;
+}
+
+void free_pub_share(pub_share_packet* pub_share) {
+  BN_clear_free(pub_share->pub_share);
+  BN_clear_free(pub_share->verify_share);
+  BN_clear_free(pub_share->public_key);
+  free(pub_share);
 }
 
 rcvd_pub_shares* create_node_pub_share(pub_share_packet* rcvd_packet) {
@@ -43,12 +53,32 @@ rcvd_pub_shares* create_node_pub_share(pub_share_packet* rcvd_packet) {
   newNode->next = NULL;
   newNode->rcvd_packets->verify_share = BN_new();
   newNode->rcvd_packets->pub_share = BN_new();
+  newNode->rcvd_packets->public_key = BN_new();
 
   newNode->rcvd_packets->sender_index = rcvd_packet->sender_index;
   BN_copy(newNode->rcvd_packets->pub_share, rcvd_packet->pub_share);
   BN_copy(newNode->rcvd_packets->verify_share, rcvd_packet->verify_share);
+  BN_copy(newNode->rcvd_packets->public_key, rcvd_packet->public_key);
 
   return newNode;
+}
+
+void free_node_pub_share(rcvd_pub_shares* node) {
+  if (node == NULL) {
+    return;
+  }
+
+  free_node_pub_share(node->next);  // free memory for remaining nodes
+
+  if (node->rcvd_packets != NULL) {
+    BN_clear_free(node->rcvd_packets->verify_share);
+    BN_clear_free(node->rcvd_packets->pub_share);
+    BN_clear_free(node->rcvd_packets->public_key);
+    node->rcvd_packets->sender_index = 0;
+    free(node->rcvd_packets);
+  }
+
+  free(node);
 }
 
 pub_share_packet* search_node_pub_share(rcvd_pub_shares* head,
@@ -80,13 +110,32 @@ bool accept_pub_share(aggregator* receiver, pub_share_packet* packet) {
 }
 
 bool search_pub_share(rcvd_pub_shares* head, int sender_index) {
-  rcvd_pub_commits* current = head;  // Initialize current
+  rcvd_pub_shares* current = head;  // Initialize current
   while (current != NULL) {
-    if (current->rcvd_packet->sender_index == sender_index) return true;
+    if (current->rcvd_packets->sender_index == sender_index) return true;
     current = current->next;
   }
   printf("Sender's public share were not found!");
   return false;
+}
+
+void pub_shares_mul(aggregator* a) {
+  BIGNUM* res_R_pub_commit = BN_new();
+  BN_CTX* ctx = BN_CTX_new();
+  rcvd_pub_shares* current = a->rcvd_pub_share_head;
+  BN_one(res_R_pub_commit);
+
+  while (current != NULL) {
+    BN_CTX_start(ctx);
+    BN_mod_mul(res_R_pub_commit, res_R_pub_commit,
+               current->rcvd_packets->pub_share, order, ctx);
+    BN_CTX_end(ctx);
+    current = current->next;
+  }
+
+  a->R_pub_commit = res_R_pub_commit;
+
+  BN_CTX_free(ctx);
 }
 
 bool R_pub_commit_compute(aggregator* a, participant* set, int set_size) {
@@ -96,6 +145,7 @@ bool R_pub_commit_compute(aggregator* a, participant* set, int set_size) {
  them.
  #
  */
+
   bool all_found = true;
   rcvd_pub_shares* currect = a->rcvd_pub_share_head;
 
@@ -107,16 +157,7 @@ bool R_pub_commit_compute(aggregator* a, participant* set, int set_size) {
   }
 
   if (all_found) {
-    BIGNUM* res_R_pub_commit = BN_new();
-    BN_zero(res_R_pub_commit);
-
-    while (currect != NULL) {
-      BN_mod_add(res_R_pub_commit, res_R_pub_commit,
-                 a->rcvd_pub_share_head->rcvd_packets->pub_share, order,
-                 BN_CTX_new());
-      currect = currect->next;
-    }
-    a->R_pub_commit = res_R_pub_commit;
+    pub_shares_mul(a);
     return true;
   } else {
     printf("Mismatch of signing participant and received shares!");
@@ -146,6 +187,24 @@ tuple_packet* init_tuple_packet(aggregator* a, char* m, size_t m_size,
 
   return a->tuple;
 }
+
+void free_tuple_packet(tuple_packet* tuple) {
+  if (tuple != NULL) {
+    if (tuple->m != NULL) {
+      free(tuple->m);
+    }
+    if (tuple->S != NULL) {
+      free(tuple->S);
+    }
+    if (tuple->R != NULL) {
+      BN_clear_free(tuple->R);
+    }
+    tuple->m_size = 0;
+    tuple->S_size = 0;
+    free(tuple);
+  }
+}
+
 bool accept_tuple(participant* receiver, tuple_packet* packet) {
   receiver->rcvd_tuple = malloc(sizeof(tuple_packet));
   receiver->rcvd_tuple->S = malloc(sizeof(participant) * packet->S_size);
@@ -170,6 +229,10 @@ BIGNUM* lagrange_coefficient(tuple_packet* tuple, int p_index) {
   int num_participants = tuple->S_size;
 
   // Initialize BIGNUMs
+  BN_CTX* ctx = BN_CTX_new();
+  BN_CTX* ctx2 = BN_CTX_new();
+  BN_CTX* ctx3 = BN_CTX_new();
+  BN_CTX* ctx4 = BN_CTX_new();
   BIGNUM* numerator = BN_new();
   BIGNUM* denominator = BN_new();
   BIGNUM* res = BN_new();
@@ -182,36 +245,48 @@ BIGNUM* lagrange_coefficient(tuple_packet* tuple, int p_index) {
   for (int i = 0; i < num_participants; i++) {
     int index = tuple->S[i].index;
     BIGNUM* b_index = BN_new();
-    BN_set_word(b_index, index);
     BIGNUM* b_p_index = BN_new();
+
+    BN_set_word(b_index, index);
     BN_set_word(b_p_index, p_index);
+    BN_CTX_start(ctx);
 
     if (index == p_index) {
       continue;
     }
     BN_mul_word(numerator, index);
     BN_sub(tmp, b_index, b_p_index);
-    BN_mul(denominator, denominator, tmp, BN_CTX_new());
+    BN_mul(denominator, denominator, tmp, ctx);
+
+    BN_CTX_end(ctx);
+    BN_clear_free(b_index);
+    BN_clear_free(b_p_index);
   }
 
-  BN_mod_inverse(tmp, denominator, order, BN_CTX_new());
-  BN_mul(res, numerator, tmp, BN_CTX_new());
-  BN_mod(res, res, order, BN_CTX_new());
+  BN_mod_inverse(tmp, denominator, order, ctx2);
+  BN_mul(res, numerator, tmp, ctx3);
+  BN_mod(res, res, order, ctx4);
+
+  BN_CTX_free(ctx);
+  BN_CTX_free(ctx2);
+  BN_CTX_free(ctx3);
+  BN_CTX_free(ctx4);
+  BN_clear_free(numerator);
+  BN_clear_free(denominator);
+  BN_clear_free(tmp);
 
   return res;
 }
 
 BIGNUM* hash_func(BIGNUM* R, char* m) {
+  BN_CTX* ctx = BN_CTX_new();
   char* R_hex = BN_bn2dec(R);
   size_t hash_len = strlen(m) + strlen(R_hex);
   char* concat = (char*)malloc(hash_len + 1);
 
-  printf("hash_len: %zu \n", hash_len);
-
   strcpy(concat, m);
-  printf("R_hex: %s \n", concat);
   strcat(concat, R_hex);
-  printf("R_hex: %s \n", concat);
+
   unsigned char hash[SHA256_DIGEST_LENGTH];
 
   EVP_MD_CTX* mdctx;
@@ -226,11 +301,19 @@ BIGNUM* hash_func(BIGNUM* R, char* m) {
 
   BIGNUM* hash_bn = BN_new();
   BN_bin2bn(hash, SHA256_DIGEST_LENGTH, hash_bn);
+  BN_mod(hash_bn, hash_bn, order, ctx);
+
+  BN_CTX_free(ctx);
+  OPENSSL_free(R_hex);
+  free(concat);
 
   return hash_bn;
 }
 
 BIGNUM* init_sig_share(participant* p) {
+  BN_CTX* ctx = BN_CTX_new();
+  BN_CTX* ctx2 = BN_CTX_new();
+  BN_CTX* ctx3 = BN_CTX_new();
   BIGNUM* sig_share = BN_new();
   BIGNUM* hash = BN_new();
   BIGNUM* tmp = BN_new();
@@ -238,10 +321,19 @@ BIGNUM* init_sig_share(participant* p) {
 
   hash = hash_func(p->rcvd_tuple->R, p->rcvd_tuple->m);
 
-  BN_mul(tmp, tmp, hash, BN_CTX_new());
-  BN_mul(tmp, tmp, p->secret_share, BN_CTX_new());
-  BN_mul(tmp, tmp, lagrange_coefficient(p->rcvd_tuple, p->index), BN_CTX_new());
+  BN_mul(tmp, tmp, hash, ctx);
+  BN_mul(tmp, tmp, p->secret_share, ctx2);
+  BN_mul(tmp, tmp, lagrange_coefficient(p->rcvd_tuple, p->index), ctx3);
   BN_add(sig_share, p->nonce, tmp);
+
+  BN_CTX_free(ctx);
+  BN_CTX_free(ctx2);
+  BN_CTX_free(ctx3);
+  BN_clear_free(hash);
+  BN_clear_free(tmp);
+  BN_clear_free(p->nonce);
+  free_pub_share(p->pub_share);
+  free_tuple_packet(p->rcvd_tuple);
 
   return sig_share;
 }
@@ -255,6 +347,17 @@ rcvd_sig_shares* create_node_sig_share(BIGNUM* sig_share) {
   BN_copy(newNode->rcvd_share, sig_share);
 
   return newNode;
+}
+
+void free_rcvd_sig_share(rcvd_sig_shares* node) {
+  if (node == NULL) {
+    return;
+  }
+
+  free_rcvd_sig_share(node->next);
+
+  BN_clear_free(node->rcvd_share);
+  free(node);
 }
 
 void insert_node_sig_share(aggregator* agg, BIGNUM* sig_share) {
@@ -280,6 +383,10 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
   pub_share_packet* sender_pub_share =
       search_node_pub_share(receiver->rcvd_pub_share_head, sender_index);
 
+  BN_CTX* ctx = BN_CTX_new();
+  BN_CTX* ctx2 = BN_CTX_new();
+  BN_CTX* ctx3 = BN_CTX_new();
+  BN_CTX* ctx4 = BN_CTX_new();
   BIGNUM* res_G_over_zi = BN_new();
   receiver->hash = BN_new();
   BIGNUM* tmp = BN_new();
@@ -288,10 +395,13 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
   BIGNUM* c = BN_new();
   BIGNUM* lambda = BN_new();
   BIGNUM* res_power = BN_new();
-  Yi = sender_pub_share->verify_share;
-  Di = sender_pub_share->pub_share;
+  receiver->public_key = BN_new();
+  BN_copy(Yi, sender_pub_share->verify_share);
+  BN_copy(Di, sender_pub_share->pub_share);
   c = hash_func(receiver->R_pub_commit, receiver->tuple->m);
   BN_copy(receiver->hash, c);
+  BN_copy(receiver->public_key,
+          receiver->rcvd_pub_share_head->rcvd_packets->public_key);
 
   for (int i = 0; i < receiver->tuple->S_size; i++) {
     if (receiver->tuple->S[i].index == sender_index) {
@@ -299,19 +409,39 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
     }
   }
 
-  BN_mod_exp(res_G_over_zi, b_generator, sig_share, order, BN_CTX_new());
+  BN_mod_exp(res_G_over_zi, b_generator, sig_share, order, ctx);
 
-  BN_mul(res_power, c, lambda, BN_CTX_new());
-  BN_mod_exp(tmp, Yi, res_power, order, BN_CTX_new());
-  BN_mod_mul(tmp, tmp, Di, order, BN_CTX_new());
+  BN_mul(res_power, c, lambda, ctx2);
+  BN_mod_exp(tmp, Yi, res_power, order, ctx3);
+  BN_mod_mul(tmp, tmp, Di, order, ctx4);
+
+  BN_CTX_free(ctx);
+  BN_CTX_free(ctx2);
+  BN_CTX_free(ctx3);
+  BN_CTX_free(ctx4);
+  BN_clear_free(res_G_over_zi);
+  BN_clear_free(tmp);
+  BN_clear_free(Yi);
+  BN_clear_free(Di);
+  BN_clear_free(c);
+  BN_clear_free(lambda);
+  BN_clear_free(res_power);
 }
 
-BIGNUM* gen_signature(rcvd_sig_shares* head, BIGNUM* signature) {
-  if (!head) {
-    return signature;
+BIGNUM* gen_signature(rcvd_sig_shares* head) {
+  BN_CTX* ctx = BN_CTX_new();
+  BIGNUM* sum = BN_new();
+  BN_zero(sum);
+
+  while (head != NULL) {
+    BN_CTX_start(ctx);
+    BN_mod_add(sum, sum, head->rcvd_share, order, ctx);
+    BN_CTX_end(ctx);
+    head = head->next;
   }
-  gen_signature(head->next, signature);
-  BN_mod_add(signature, signature, head->rcvd_share, order, BN_CTX_new());
+
+  BN_CTX_free(ctx);
+  return sum;
 }
 
 signature_packet signature(aggregator* agg) {
@@ -321,9 +451,28 @@ signature_packet signature(aggregator* agg) {
   */
   BIGNUM* signature = BN_new();
 
-  signature = gen_signature(agg->rcvd_sig_shares_head, signature);
+  signature = gen_signature(agg->rcvd_sig_shares_head);
 
   signature_packet sig_packet = {.hash = agg->hash, .signature = signature};
 
+  free_rcvd_sig_share(agg->rcvd_sig_shares_head);
+  free_node_pub_share(agg->rcvd_pub_share_head);
+  free_tuple_packet(agg->tuple);
+
   return sig_packet;
+}
+
+bool verify_signature(signature_packet* sig_packet, char* m, BIGNUM* Y) {
+  BIGNUM* R0 = BN_new();
+  BIGNUM* z0 = BN_new();
+  BIGNUM* temp1 = BN_new();
+  BIGNUM* temp2 = BN_new();
+
+  // Compute R0 = g^z * Y^-c mod order
+  BN_mod_exp(temp1, b_generator, sig_packet->signature, order, BN_CTX_new());
+  BN_mod_exp(temp2, Y, sig_packet->hash, order, BN_CTX_new());
+  BN_mod_inverse(temp2, temp2, modulo, BN_CTX_new());
+  BN_mod_mul(R0, temp1, temp2, order, BN_CTX_new());
+
+  z0 = hash_func(R0, m);
 }

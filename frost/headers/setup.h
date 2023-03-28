@@ -23,6 +23,7 @@ typedef struct {
   int sender_index;
   BIGNUM* verify_share;
   BIGNUM* pub_share;
+  BIGNUM* public_key;
 } pub_share_packet;
 
 typedef struct {

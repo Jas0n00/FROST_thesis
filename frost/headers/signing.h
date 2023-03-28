@@ -16,6 +16,7 @@ typedef struct node_sig_share {
 typedef struct {
   BIGNUM* signature;
   BIGNUM* hash;
+  char* m;
 } signature_packet;
 
 typedef struct {
@@ -54,3 +55,6 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
                       int sender_index);
 
 signature_packet signature(aggregator* a);
+
+bool verify_signature(signature_packet* sig_packet, char* m,
+                      BIGNUM* PK_verifier);

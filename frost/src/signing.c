@@ -14,15 +14,6 @@
 
 /*Preprocess stage*/
 pub_share_packet* init_pub_share(participant* p) {
-  /*
-  # create nonce list [];
-  #
-  # 1. Preprocess(π) ->  (i, ⟨D_i_j⟩), 1 ≤ j ≤ π | i - participant idetifier
-  where : (D_ij) is nonce pair of G over random number -> (g^d_ij)
-  #
-  # 2. stores locally (d_i, ⟨D_i_j⟩;
-  # broadcast nonce commitments pair list to aggregator[];
-  */
   BN_CTX* ctx = BN_CTX_new();
   p->pub_share = malloc(sizeof(pub_share_packet));
   p->pub_share->pub_share = BN_new();
@@ -34,9 +25,14 @@ pub_share_packet* init_pub_share(participant* p) {
   BN_copy(p->pub_share->verify_share, p->verify_share);
   BN_copy(p->pub_share->public_key, p->public_key);
   BN_copy(p->nonce, generate_rand());
-  BN_mod_exp(p->pub_share->pub_share, b_generator, p->nonce, order, ctx);
+  BN_mul(p->pub_share->pub_share, b_generator, p->nonce, ctx);
 
-  BN_CTX_free(ctx);
+  printf("\nParticipant [%d] has nonce: ", p->index);
+  BN_print_fp(stdout, p->nonce);
+  printf("\nDi: ");
+  BN_print_fp(stdout, p->pub_share->pub_share);
+  printf("\n");
+
   return p->pub_share;
 }
 
@@ -48,7 +44,7 @@ void free_pub_share(pub_share_packet* pub_share) {
 }
 
 rcvd_pub_shares* create_node_pub_share(pub_share_packet* rcvd_packet) {
-  rcvd_pub_shares* newNode = (rcvd_pub_shares*)malloc(sizeof(rcvd_pub_shares));
+  rcvd_pub_shares* newNode = malloc(sizeof(rcvd_pub_shares));
   newNode->rcvd_packets = malloc(sizeof(pub_share_packet));
   newNode->next = NULL;
   newNode->rcvd_packets->verify_share = BN_new();
@@ -89,7 +85,7 @@ pub_share_packet* search_node_pub_share(rcvd_pub_shares* head,
       return current->rcvd_packets;
     current = current->next;
   }
-  printf("Sender's public commitment were not found!");
+  printf("Sender's public share were not found!");
 }
 
 void insert_node_pub_share(aggregator* agg, pub_share_packet* rcvd_packet) {
@@ -123,14 +119,22 @@ void pub_shares_mul(aggregator* a) {
   BIGNUM* res_R_pub_commit = BN_new();
   BN_CTX* ctx = BN_CTX_new();
   rcvd_pub_shares* current = a->rcvd_pub_share_head;
-  BN_one(res_R_pub_commit);
+  BN_zero(res_R_pub_commit);
+
+  printf("\nAgg comuputes R: ");
 
   while (current != NULL) {
+    BN_print_fp(stdout, res_R_pub_commit);
+    printf(" + ");
+    BN_print_fp(stdout, current->rcvd_packets->pub_share);
     BN_CTX_start(ctx);
-    BN_mod_mul(res_R_pub_commit, res_R_pub_commit,
+    BN_mod_add(res_R_pub_commit, res_R_pub_commit,
                current->rcvd_packets->pub_share, order, ctx);
     BN_CTX_end(ctx);
     current = current->next;
+    printf(" = ");
+    BN_print_fp(stdout, res_R_pub_commit);
+    printf("\n");
   }
 
   a->R_pub_commit = res_R_pub_commit;
@@ -197,7 +201,7 @@ void free_tuple_packet(tuple_packet* tuple) {
       free(tuple->S);
     }
     if (tuple->R != NULL) {
-      BN_clear_free(tuple->R);
+      BN_free(tuple->R);
     }
     tuple->m_size = 0;
     tuple->S_size = 0;
@@ -222,6 +226,12 @@ bool accept_tuple(participant* receiver, tuple_packet* packet) {
   for (int i = 0; i < packet->m_size; i++) {
     receiver->rcvd_tuple->m[i] = packet->m[i];
   }
+
+  printf("\nParticipant [%d] has tuple:\nR: ", receiver->index);
+  BN_print_fp(stdout, receiver->rcvd_tuple->R);
+  printf("\nmessage: %s", receiver->rcvd_tuple->m);
+  printf("\n");
+
   return true;
 }
 
@@ -237,6 +247,9 @@ BIGNUM* lagrange_coefficient(tuple_packet* tuple, int p_index) {
   BIGNUM* denominator = BN_new();
   BIGNUM* res = BN_new();
   BIGNUM* tmp = BN_new();
+  BIGNUM* Q_2 = BN_new();
+  BIGNUM* b_2 = BN_new();
+  BN_set_word(b_2, 2);
 
   // Set values for numerator, denominator
   BN_one(numerator);
@@ -259,21 +272,32 @@ BIGNUM* lagrange_coefficient(tuple_packet* tuple, int p_index) {
     BN_mul(denominator, denominator, tmp, ctx);
 
     BN_CTX_end(ctx);
-    BN_clear_free(b_index);
-    BN_clear_free(b_p_index);
+    BN_free(b_index);
+    BN_free(b_p_index);
   }
 
-  BN_mod_inverse(tmp, denominator, order, ctx2);
+  BN_sub(Q_2, order, b_2);
+  BN_mod_exp(tmp, denominator, Q_2, order, ctx2);
   BN_mul(res, numerator, tmp, ctx3);
   BN_mod(res, res, order, ctx4);
+
+  printf("\n");
+  printf("Inverse number: ");
+  BN_print_fp(stdout, denominator);
+  printf("\n\n");
+  BN_print_fp(stdout, numerator);
+  printf(" * ");
+  BN_print_fp(stdout, tmp);
+  printf(" = ");
+  BN_print_fp(stdout, res);
 
   BN_CTX_free(ctx);
   BN_CTX_free(ctx2);
   BN_CTX_free(ctx3);
   BN_CTX_free(ctx4);
-  BN_clear_free(numerator);
-  BN_clear_free(denominator);
-  BN_clear_free(tmp);
+  BN_free(numerator);
+  BN_free(denominator);
+  BN_free(tmp);
 
   return res;
 }
@@ -286,6 +310,8 @@ BIGNUM* hash_func(BIGNUM* R, char* m) {
 
   strcpy(concat, m);
   strcat(concat, R_hex);
+  printf("\nsize of hash len: %zu", hash_len);
+  printf("\nstring: %s", concat);
 
   unsigned char hash[SHA256_DIGEST_LENGTH];
 
@@ -321,17 +347,22 @@ BIGNUM* init_sig_share(participant* p) {
 
   hash = hash_func(p->rcvd_tuple->R, p->rcvd_tuple->m);
 
-  BN_mul(tmp, tmp, hash, ctx);
-  BN_mul(tmp, tmp, p->secret_share, ctx2);
-  BN_mul(tmp, tmp, lagrange_coefficient(p->rcvd_tuple, p->index), ctx3);
-  BN_add(sig_share, p->nonce, tmp);
+  printf("\n Participant [%d] init_sign_share\nhash: ", p->index);
+  BN_print_fp(stdout, hash);
+  printf("\n");
+
+  BN_mod_mul(tmp, tmp, hash, order, ctx);
+  BN_mod_mul(tmp, tmp, p->secret_share, order, ctx2);
+  BN_mod_mul(tmp, tmp, lagrange_coefficient(p->rcvd_tuple, p->index), order,
+             ctx3);
+  BN_mod_add(sig_share, p->nonce, tmp, order, BN_CTX_new());
 
   BN_CTX_free(ctx);
   BN_CTX_free(ctx2);
   BN_CTX_free(ctx3);
-  BN_clear_free(hash);
-  BN_clear_free(tmp);
-  BN_clear_free(p->nonce);
+  BN_free(hash);
+  BN_free(tmp);
+  BN_free(p->nonce);
   free_pub_share(p->pub_share);
   free_tuple_packet(p->rcvd_tuple);
 
@@ -409,23 +440,29 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
     }
   }
 
-  BN_mod_exp(res_G_over_zi, b_generator, sig_share, order, ctx);
+  BN_mod_mul(res_G_over_zi, b_generator, sig_share, order, ctx);
 
-  BN_mul(res_power, c, lambda, ctx2);
-  BN_mod_exp(tmp, Yi, res_power, order, ctx3);
-  BN_mod_mul(tmp, tmp, Di, order, ctx4);
+  BN_mod_mul(res_power, c, lambda, order, ctx2);
+  BN_mod_mul(tmp, Yi, res_power, order, ctx3);
+  BN_mod_add(tmp, tmp, Di, order, ctx4);
+
+  printf("\n res_G_over_zi: ");
+  BN_print_fp(stdout, res_G_over_zi);
+  printf("\n left side: ");
+  BN_print_fp(stdout, tmp);
+  printf("\n");
 
   BN_CTX_free(ctx);
   BN_CTX_free(ctx2);
   BN_CTX_free(ctx3);
   BN_CTX_free(ctx4);
-  BN_clear_free(res_G_over_zi);
-  BN_clear_free(tmp);
-  BN_clear_free(Yi);
-  BN_clear_free(Di);
-  BN_clear_free(c);
-  BN_clear_free(lambda);
-  BN_clear_free(res_power);
+  BN_free(res_G_over_zi);
+  BN_free(tmp);
+  BN_free(Yi);
+  BN_free(Di);
+  BN_free(c);
+  BN_free(lambda);
+  BN_free(res_power);
 }
 
 BIGNUM* gen_signature(rcvd_sig_shares* head) {
@@ -455,9 +492,9 @@ signature_packet signature(aggregator* agg) {
 
   signature_packet sig_packet = {.hash = agg->hash, .signature = signature};
 
-  free_rcvd_sig_share(agg->rcvd_sig_shares_head);
   free_node_pub_share(agg->rcvd_pub_share_head);
   free_tuple_packet(agg->tuple);
+  free_rcvd_sig_share(agg->rcvd_sig_shares_head);
 
   return sig_packet;
 }
@@ -467,12 +504,17 @@ bool verify_signature(signature_packet* sig_packet, char* m, BIGNUM* Y) {
   BIGNUM* z0 = BN_new();
   BIGNUM* temp1 = BN_new();
   BIGNUM* temp2 = BN_new();
+  BIGNUM* temp3 = BN_new();
 
   // Compute R0 = g^z * Y^-c mod order
-  BN_mod_exp(temp1, b_generator, sig_packet->signature, order, BN_CTX_new());
-  BN_mod_exp(temp2, Y, sig_packet->hash, order, BN_CTX_new());
-  BN_mod_inverse(temp2, temp2, modulo, BN_CTX_new());
-  BN_mod_mul(R0, temp1, temp2, order, BN_CTX_new());
+  BN_mod_mul(temp1, b_generator, sig_packet->signature, order, BN_CTX_new());
+  BN_mod_mul(temp3, Y, sig_packet->hash, order, BN_CTX_new());
+  BN_mod_sub(R0, temp1, temp3, order, BN_CTX_new());
 
   z0 = hash_func(R0, m);
+
+  printf("\n R0: ");
+  BN_print_fp(stdout, R0);
+  printf("\n c': ");
+  BN_print_fp(stdout, z0);
 }

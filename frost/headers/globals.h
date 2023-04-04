@@ -6,6 +6,7 @@ extern const EC_POINT* p_generator;
 extern const BIGNUM* b_generator;
 extern const BIGNUM* order;
 extern const BIGNUM* modulo;
+BIGNUM* phi;
 #define NUM_BYTES 32
 
 void free_curve_parameters();

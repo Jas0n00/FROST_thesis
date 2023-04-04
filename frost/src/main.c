@@ -45,14 +45,22 @@ int main(int argc, char const* argv[]) {
   accept_pub_commit(&p2, p1_pub_commit);
 
   /*Send & Verifies Secret Shares*/
+  BIGNUM* p0_sec_share = init_sec_share(&p0, p0.index);
+  accept_sec_share(&p0, p0.index, p0_sec_share);
   BIGNUM* p01_sec_share = init_sec_share(&p0, p1.index);
   accept_sec_share(&p1, p0.index, p01_sec_share);
   BIGNUM* p02_sec_share = init_sec_share(&p0, p2.index);
   accept_sec_share(&p2, p0.index, p02_sec_share);
+
+  BIGNUM* p1_sec_share = init_sec_share(&p1, p1.index);
+  accept_sec_share(&p1, p1.index, p1_sec_share);
   BIGNUM* p10_sec_share = init_sec_share(&p1, p0.index);
   accept_sec_share(&p0, p1.index, p10_sec_share);
   BIGNUM* p12_sec_share = init_sec_share(&p1, p2.index);
   accept_sec_share(&p2, p1.index, p12_sec_share);
+
+  BIGNUM* p2_sec_share = init_sec_share(&p2, p2.index);
+  accept_sec_share(&p2, p2.index, p2_sec_share);
   BIGNUM* p20_sec_share = init_sec_share(&p2, p0.index);
   accept_sec_share(&p0, p2.index, p20_sec_share);
   BIGNUM* p21_sec_share = init_sec_share(&p2, p1.index);

@@ -30,6 +30,11 @@ void initialize_curve_parameters() {
 
   order = EC_GROUP_get0_order(ec_group);
   modulo = EC_GROUP_get0_field(ec_group);
+  const char* phi_hex =
+      "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551";
+
+  phi = BN_new();
+  BN_hex2bn(&phi, phi_hex);
 
   // free the memory allocated for buf
   OPENSSL_free(buf);

@@ -20,15 +20,6 @@ typedef struct {
 } signature_packet;
 
 typedef struct {
-  /* data
-
-  # message
-  # public key
-  # participal indexes list []
-  # commitments pair list []
-  # nonce commitment pair list []
-
-  */
   int threshold;
   BIGNUM* public_key;
   BIGNUM* R_pub_commit;
@@ -36,8 +27,6 @@ typedef struct {
   tuple_packet* tuple;
   rcvd_pub_shares* rcvd_pub_share_head;
   rcvd_sig_shares* rcvd_sig_shares_head;
-  size_t len_shares;
-
 } aggregator;
 
 pub_share_packet* init_pub_share(participant* p);
@@ -57,4 +46,4 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
 signature_packet signature(aggregator* a);
 
 bool verify_signature(signature_packet* sig_packet, char* m,
-                      BIGNUM* PK_verifier);
+                      BIGNUM* Y_verifier);

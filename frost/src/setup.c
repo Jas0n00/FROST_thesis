@@ -11,82 +11,6 @@
 
 #include "../headers/globals.h"
 
-rcvd_pub_commits* create_node_commit(pub_commit_packet* rcvd_packet) {
-  size_t commit_len = rcvd_packet->commit_len;
-
-  rcvd_pub_commits* newNode =
-      (rcvd_pub_commits*)malloc(sizeof(rcvd_pub_commits));
-  newNode->rcvd_packet = malloc(sizeof(pub_commit_packet));
-  newNode->rcvd_packet->commit = OPENSSL_malloc(sizeof(BIGNUM*) * commit_len);
-  newNode->next = NULL;
-
-  newNode->rcvd_packet->commit_len = rcvd_packet->commit_len;
-  newNode->rcvd_packet->sender_index = rcvd_packet->sender_index;
-  for (int j = 0; j < commit_len; j++) {
-    newNode->rcvd_packet->commit[j] = BN_new();
-    BN_copy(newNode->rcvd_packet->commit[j], rcvd_packet->commit[j]);
-  }
-
-  return newNode;
-}
-
-void insert_node_commit(participant* p, pub_commit_packet* rcvd_packet) {
-  rcvd_pub_commits* newNode = create_node_commit(rcvd_packet);
-  newNode->next = p->rcvd_commit_head;
-  p->rcvd_commit_head = newNode;
-}
-
-void free_rcvd_pub_commits(rcvd_pub_commits* head) {
-  if (head == NULL) {
-    return;
-  }
-  free_rcvd_pub_commits(head->next);
-  for (int j = 0; j < head->rcvd_packet->commit_len; j++) {
-    BN_clear_free(head->rcvd_packet->commit[j]);
-  }
-  OPENSSL_free(head->rcvd_packet->commit);
-  free(head->rcvd_packet);
-  free(head);
-}
-
-pub_commit_packet* search_node_commit(rcvd_pub_commits* head,
-                                      int sender_index) {
-  rcvd_pub_commits* current = head;  // Initialize current
-  while (current != NULL) {
-    if (current->rcvd_packet->sender_index == sender_index)
-      return current->rcvd_packet;
-    current = current->next;
-  }
-  printf("Sender's public commitment were not found!");
-}
-
-rcvd_sec_shares* create_node_share(BIGNUM* sec_share) {
-  rcvd_sec_shares* newNode = (rcvd_sec_shares*)malloc(sizeof(rcvd_sec_shares));
-  newNode->rcvd_share = OPENSSL_malloc(sizeof(BIGNUM*));
-  newNode->next = NULL;
-
-  newNode->rcvd_share = BN_new();
-  BN_copy(newNode->rcvd_share, sec_share);
-
-  return newNode;
-}
-
-void free_rcvd_sec_shares(rcvd_sec_shares* head) {
-  if (head == NULL) {
-    return;
-  }
-  free_rcvd_sec_shares(head->next);
-  BN_clear_free(head->rcvd_share);
-  OPENSSL_free(head);
-}
-
-void insert_node_share(participant* p, BIGNUM* sec_share) {
-  rcvd_sec_shares* newNode = create_node_share(sec_share);
-
-  newNode->next = p->rcvd_sec_share_head;
-  p->rcvd_sec_share_head = newNode;
-}
-
 void init_coeff_list(participant* p) {
   /*
   #
@@ -139,7 +63,7 @@ pub_commit_packet* init_pub_commit(participant* p) {
   for (int j = 0; j < threshold; j++) {
     p->pub_commit->commit[j] = BN_new();
     BIGNUM* result = BN_new();
-    BN_mod_exp(result, b_generator, p->list->coeff[j], order, ctx);
+    BN_mul(result, b_generator, p->list->coeff[j], ctx);
     BN_copy(p->pub_commit->commit[j], result);
   }
 
@@ -162,6 +86,55 @@ void free_pub_commit(pub_commit_packet* pub_commit) {
   pub_commit->commit_len = 0;
   pub_commit->sender_index = 0;
   pub_commit->commit = NULL;
+}
+
+rcvd_pub_commits* create_node_commit(pub_commit_packet* rcvd_packet) {
+  size_t commit_len = rcvd_packet->commit_len;
+
+  rcvd_pub_commits* newNode =
+      (rcvd_pub_commits*)malloc(sizeof(rcvd_pub_commits));
+  newNode->rcvd_packet = malloc(sizeof(pub_commit_packet));
+  newNode->rcvd_packet->commit = OPENSSL_malloc(sizeof(BIGNUM*) * commit_len);
+  newNode->next = NULL;
+
+  newNode->rcvd_packet->commit_len = rcvd_packet->commit_len;
+  newNode->rcvd_packet->sender_index = rcvd_packet->sender_index;
+  for (int j = 0; j < commit_len; j++) {
+    newNode->rcvd_packet->commit[j] = BN_new();
+    BN_copy(newNode->rcvd_packet->commit[j], rcvd_packet->commit[j]);
+  }
+
+  return newNode;
+}
+
+void insert_node_commit(participant* p, pub_commit_packet* rcvd_packet) {
+  rcvd_pub_commits* newNode = create_node_commit(rcvd_packet);
+  newNode->next = p->rcvd_commit_head;
+  p->rcvd_commit_head = newNode;
+}
+
+void free_rcvd_pub_commits(rcvd_pub_commits* head) {
+  if (head == NULL) {
+    return;
+  }
+  free_rcvd_pub_commits(head->next);
+  for (int j = 0; j < head->rcvd_packet->commit_len; j++) {
+    BN_clear_free(head->rcvd_packet->commit[j]);
+  }
+  OPENSSL_free(head->rcvd_packet->commit);
+  free(head->rcvd_packet);
+  free(head);
+}
+
+pub_commit_packet* search_node_commit(rcvd_pub_commits* head,
+                                      int sender_index) {
+  rcvd_pub_commits* current = head;  // Initialize current
+  while (current != NULL) {
+    if (current->rcvd_packet->sender_index == sender_index)
+      return current->rcvd_packet;
+    current = current->next;
+  }
+  printf("Sender's public commitment were not found!");
 }
 
 bool accept_pub_commit(participant* receiver, pub_commit_packet* pub_commit) {
@@ -227,13 +200,14 @@ BIGNUM* init_sec_share(participant* sender, int reciever_index) {
     BN_CTX_start(ctx);
     BN_CTX_start(ctx2);
 
-    BN_exp(expo_product, b_index, sender->func->t[i].exponent, ctx);
-    BN_mul(multi_product, sender->func->t[i].coefficient, expo_product, ctx2);
+    BN_mod_exp(expo_product, b_index, sender->func->t[i].exponent, order, ctx);
+    BN_mod_mul(multi_product, sender->func->t[i].coefficient, expo_product,
+               order, ctx2);
     if (result == NULL) {
       result = BN_new();
       BN_copy(result, multi_product);
     } else {
-      BN_add(result, result, multi_product);
+      BN_mod_add(result, result, multi_product, order, BN_CTX_new());
     }
 
     BN_CTX_end(ctx);
@@ -263,11 +237,36 @@ void free_poly(participant* p) {
   free(p->func);
 }
 
+rcvd_sec_shares* create_node_share(BIGNUM* sec_share) {
+  rcvd_sec_shares* newNode = (rcvd_sec_shares*)malloc(sizeof(rcvd_sec_shares));
+  newNode->rcvd_share = OPENSSL_malloc(sizeof(BIGNUM*));
+  newNode->next = NULL;
+
+  newNode->rcvd_share = BN_new();
+  BN_copy(newNode->rcvd_share, sec_share);
+
+  return newNode;
+}
+
+void free_rcvd_sec_shares(rcvd_sec_shares* head) {
+  if (head == NULL) {
+    return;
+  }
+  free_rcvd_sec_shares(head->next);
+  BN_clear_free(head->rcvd_share);
+  OPENSSL_free(head);
+}
+
+void insert_node_share(participant* p, BIGNUM* sec_share) {
+  rcvd_sec_shares* newNode = create_node_share(sec_share);
+
+  newNode->next = p->rcvd_sec_share_head;
+  p->rcvd_sec_share_head = newNode;
+}
+
 bool accept_sec_share(participant* receiver, int sender_index,
                       BIGNUM* sec_share) {
   int threshold = receiver->threshold;
-  pub_commit_packet* sender_pub_commit =
-      search_node_commit(receiver->rcvd_commit_head, sender_index);
 
   if (receiver->rcvd_sec_share_head == NULL) {
     receiver->rcvd_sec_share_head = create_node_share(sec_share);
@@ -280,6 +279,15 @@ bool accept_sec_share(participant* receiver, int sender_index,
   mod G)  : 0 ≤ k ≤ t - 1
   #
   */
+
+  // TODO:
+  if (sender_index == receiver->index) {
+    return true;
+  }
+
+  pub_commit_packet* sender_pub_commit =
+      search_node_commit(receiver->rcvd_commit_head, sender_index);
+
   BN_CTX* ctx = BN_CTX_new();
   BN_CTX* ctx2 = BN_CTX_new();
   BN_CTX* ctx3 = BN_CTX_new();
@@ -290,7 +298,7 @@ bool accept_sec_share(participant* receiver, int sender_index,
   BIGNUM* res_commits = NULL;
   BN_set_word(b_index, receiver->index);
 
-  BN_mod_exp(res_G_over_fj, b_generator, sec_share, order, ctx);
+  BN_mod_mul(res_G_over_fj, b_generator, sec_share, order, ctx);
 
   for (int k = 0; k < threshold; k++) {
     BN_CTX_start(ctx2);
@@ -302,13 +310,13 @@ bool accept_sec_share(participant* receiver, int sender_index,
     BN_set_word(b_k, k);
 
     BN_mod_exp(res_power, b_index, b_k, order, ctx2);
-    BN_mod_exp(commit_powered, sender_pub_commit->commit[k], res_power, order,
+    BN_mod_mul(commit_powered, sender_pub_commit->commit[k], res_power, order,
                ctx3);
     if (res_commits == NULL) {
       res_commits = BN_new();
       BN_copy(res_commits, commit_powered);
     } else {
-      BN_mod_mul(res_commits, res_commits, commit_powered, order, ctx4);
+      BN_mod_add(res_commits, res_commits, commit_powered, order, ctx4);
     }
     BN_clear_free(b_k);
     BN_clear_free(res_power);
@@ -317,12 +325,13 @@ bool accept_sec_share(participant* receiver, int sender_index,
     BN_CTX_end(ctx3);
     BN_CTX_end(ctx4);
   }
-  BN_mod(res_commits, res_commits, order, ctx5);
 
-  printf("\n \n");
-  BN_print_fp(stdout, res_G_over_fj);
-  printf("\n \n");
-  BN_print_fp(stdout, res_commits);
+  if (!BN_cmp(res_G_over_fj, res_commits)) {
+    return true;
+  } else {
+    printf("\nMismatch of Public commitments!\n");
+    return EXIT_FAILURE;
+  }
 
   BN_clear_free(b_index);
   BN_clear_free(res_G_over_fj);
@@ -348,7 +357,7 @@ void gen_sec_share(participant* p, rcvd_sec_shares* head) {
   }
 
   BN_copy(p->secret_share, sum);
-  BN_clear_free(sum);
+  BN_free(sum);
   BN_CTX_free(ctx);
 }
 
@@ -359,13 +368,13 @@ void gen_pub_key(participant* p, rcvd_pub_commits* head, BIGNUM* self_commit) {
 
   while (head != NULL) {
     BN_CTX_start(ctx);
-    BN_mod_mul(product, product, head->rcvd_packet->commit[0], order, ctx);
+    BN_add(product, product, head->rcvd_packet->commit[0]);
     BN_CTX_end(ctx);
     head = head->next;
   }
 
   BN_copy(p->public_key, product);
-  BN_clear_free(product);
+  BN_free(product);
   BN_CTX_free(ctx);
 }
 
@@ -378,6 +387,7 @@ bool gen_keys(participant* p) {
   # s_i = ∑ f_j(i), 1 ≤ j ≤ n
   # sum of share list [] -> store secret share;
   */
+  printf("\nParitcipant [%d]: \n", p->index);
 
   gen_sec_share(p, p->rcvd_sec_share_head);
 
@@ -386,8 +396,7 @@ bool gen_keys(participant* p) {
   # Y_i = G ^ s_i
   */
 
-  BN_mod_exp(p->verify_share, b_generator, p->secret_share, order,
-             BN_CTX_new());
+  BN_mul(p->verify_share, b_generator, p->secret_share, BN_CTX_new());
 
   /*
   # 3. Each participant then calculates public key:
@@ -397,9 +406,13 @@ bool gen_keys(participant* p) {
   gen_pub_key(p, p->rcvd_commit_head, p->pub_commit->commit[0]);
 
   printf("\n\n Keys:\n");
+  printf(" \nSEC_share: ");
   BN_print_fp(stdout, p->secret_share);
+  printf(" \nPUB_share: ");
   BN_print_fp(stdout, p->verify_share);
+  printf(" \nPUB_key: ");
   BN_print_fp(stdout, p->public_key);
+  printf(" \n\n ");
 
   // Free used memory for every participant
   free_coeff_list(p->list);

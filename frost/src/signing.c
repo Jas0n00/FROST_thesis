@@ -3,11 +3,8 @@
 #include <openssl/bn.h>
 #include <openssl/sha.h>
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "../headers/globals.h"
 #include "../headers/setup.h"
@@ -15,6 +12,7 @@
 /*Preprocess stage*/
 pub_share_packet* init_pub_share(participant* p) {
   BN_CTX* ctx = BN_CTX_new();
+  BIGNUM* rand = generate_rand();
   p->pub_share = malloc(sizeof(pub_share_packet));
   p->pub_share->pub_share = BN_new();
   p->pub_share->verify_share = BN_new();
@@ -24,14 +22,11 @@ pub_share_packet* init_pub_share(participant* p) {
 
   BN_copy(p->pub_share->verify_share, p->verify_share);
   BN_copy(p->pub_share->public_key, p->public_key);
-  BN_copy(p->nonce, generate_rand());
+  BN_copy(p->nonce, rand);
   BN_mul(p->pub_share->pub_share, b_generator, p->nonce, ctx);
 
-  printf("\nParticipant [%d] has nonce: ", p->index);
-  BN_print_fp(stdout, p->nonce);
-  printf("\nDi: ");
-  BN_print_fp(stdout, p->pub_share->pub_share);
-  printf("\n");
+  BN_CTX_free(ctx);
+  BN_clear_free(rand);
 
   return p->pub_share;
 }
@@ -118,27 +113,23 @@ bool search_pub_share(rcvd_pub_shares* head, int sender_index) {
 void pub_shares_mul(aggregator* a) {
   BIGNUM* res_R_pub_commit = BN_new();
   BN_CTX* ctx = BN_CTX_new();
+  a->R_pub_commit = BN_new();
   rcvd_pub_shares* current = a->rcvd_pub_share_head;
   BN_zero(res_R_pub_commit);
 
   printf("\nAgg comuputes R: ");
 
   while (current != NULL) {
-    BN_print_fp(stdout, res_R_pub_commit);
-    printf(" + ");
-    BN_print_fp(stdout, current->rcvd_packets->pub_share);
     BN_CTX_start(ctx);
     BN_mod_add(res_R_pub_commit, res_R_pub_commit,
                current->rcvd_packets->pub_share, order, ctx);
     BN_CTX_end(ctx);
     current = current->next;
-    printf(" = ");
-    BN_print_fp(stdout, res_R_pub_commit);
-    printf("\n");
   }
 
-  a->R_pub_commit = res_R_pub_commit;
+  BN_copy(a->R_pub_commit, res_R_pub_commit);
 
+  BN_clear_free(res_R_pub_commit);
   BN_CTX_free(ctx);
 }
 
@@ -171,6 +162,11 @@ bool R_pub_commit_compute(aggregator* a, participant* set, int set_size) {
 
 tuple_packet* init_tuple_packet(aggregator* a, char* m, size_t m_size,
                                 participant* set, int set_size) {
+  if (a->threshold != set_size) {
+    printf("\nMismatch of threshold and included participants!\n");
+    abort();
+  }
+
   if (R_pub_commit_compute(a, set, set_size)) {
     a->tuple = malloc(sizeof(tuple_packet));
     a->tuple->m = malloc(sizeof(char) * m_size);
@@ -265,6 +261,9 @@ BIGNUM* lagrange_coefficient(tuple_packet* tuple, int p_index) {
     BN_CTX_start(ctx);
 
     if (index == p_index) {
+      BN_CTX_end(ctx);
+      BN_clear_free(b_index);
+      BN_clear_free(b_p_index);
       continue;
     }
     BN_mul_word(numerator, index);
@@ -272,8 +271,8 @@ BIGNUM* lagrange_coefficient(tuple_packet* tuple, int p_index) {
     BN_mul(denominator, denominator, tmp, ctx);
 
     BN_CTX_end(ctx);
-    BN_free(b_index);
-    BN_free(b_p_index);
+    BN_clear_free(b_index);
+    BN_clear_free(b_p_index);
   }
 
   BN_sub(Q_2, order, b_2);
@@ -281,23 +280,15 @@ BIGNUM* lagrange_coefficient(tuple_packet* tuple, int p_index) {
   BN_mul(res, numerator, tmp, ctx3);
   BN_mod(res, res, order, ctx4);
 
-  printf("\n");
-  printf("Inverse number: ");
-  BN_print_fp(stdout, denominator);
-  printf("\n\n");
-  BN_print_fp(stdout, numerator);
-  printf(" * ");
-  BN_print_fp(stdout, tmp);
-  printf(" = ");
-  BN_print_fp(stdout, res);
-
   BN_CTX_free(ctx);
   BN_CTX_free(ctx2);
   BN_CTX_free(ctx3);
   BN_CTX_free(ctx4);
-  BN_free(numerator);
-  BN_free(denominator);
-  BN_free(tmp);
+  BN_clear_free(numerator);
+  BN_clear_free(denominator);
+  BN_clear_free(tmp);
+  BN_clear_free(Q_2);
+  BN_clear_free(b_2);
 
   return res;
 }
@@ -310,8 +301,6 @@ BIGNUM* hash_func(BIGNUM* R, char* m) {
 
   strcpy(concat, m);
   strcat(concat, R_hex);
-  printf("\nsize of hash len: %zu", hash_len);
-  printf("\nstring: %s", concat);
 
   unsigned char hash[SHA256_DIGEST_LENGTH];
 
@@ -340,29 +329,27 @@ BIGNUM* init_sig_share(participant* p) {
   BN_CTX* ctx = BN_CTX_new();
   BN_CTX* ctx2 = BN_CTX_new();
   BN_CTX* ctx3 = BN_CTX_new();
+  BN_CTX* ctx4 = BN_CTX_new();
   BIGNUM* sig_share = BN_new();
-  BIGNUM* hash = BN_new();
   BIGNUM* tmp = BN_new();
+  BIGNUM* lambda = lagrange_coefficient(p->rcvd_tuple, p->index);
   BN_one(tmp);
 
-  hash = hash_func(p->rcvd_tuple->R, p->rcvd_tuple->m);
-
-  printf("\n Participant [%d] init_sign_share\nhash: ", p->index);
-  BN_print_fp(stdout, hash);
-  printf("\n");
+  BIGNUM* hash = hash_func(p->rcvd_tuple->R, p->rcvd_tuple->m);
 
   BN_mod_mul(tmp, tmp, hash, order, ctx);
   BN_mod_mul(tmp, tmp, p->secret_share, order, ctx2);
-  BN_mod_mul(tmp, tmp, lagrange_coefficient(p->rcvd_tuple, p->index), order,
-             ctx3);
-  BN_mod_add(sig_share, p->nonce, tmp, order, BN_CTX_new());
+  BN_mod_mul(tmp, tmp, lambda, order, ctx3);
+  BN_mod_add(sig_share, p->nonce, tmp, order, ctx4);
 
   BN_CTX_free(ctx);
   BN_CTX_free(ctx2);
   BN_CTX_free(ctx3);
-  BN_free(hash);
-  BN_free(tmp);
-  BN_free(p->nonce);
+  BN_CTX_free(ctx4);
+  BN_clear_free(hash);
+  BN_clear_free(lambda);
+  BN_clear_free(tmp);
+  BN_clear_free(p->nonce);
   free_pub_share(p->pub_share);
   free_tuple_packet(p->rcvd_tuple);
 
@@ -371,24 +358,22 @@ BIGNUM* init_sig_share(participant* p) {
 
 rcvd_sig_shares* create_node_sig_share(BIGNUM* sig_share) {
   rcvd_sig_shares* newNode = (rcvd_sig_shares*)malloc(sizeof(rcvd_sig_shares));
-  newNode->rcvd_share = OPENSSL_malloc(sizeof(BIGNUM*));
+  newNode->rcvd_share = BN_new();
   newNode->next = NULL;
 
-  newNode->rcvd_share = BN_new();
   BN_copy(newNode->rcvd_share, sig_share);
 
   return newNode;
 }
 
 void free_rcvd_sig_share(rcvd_sig_shares* node) {
-  if (node == NULL) {
-    return;
+  rcvd_sig_shares* curr = node;
+  while (curr != NULL) {
+    rcvd_sig_shares* next = curr->next;
+    BN_clear_free(curr->rcvd_share);
+    free(curr);
+    curr = next;
   }
-
-  free_rcvd_sig_share(node->next);
-
-  BN_clear_free(node->rcvd_share);
-  free(node);
 }
 
 void insert_node_sig_share(aggregator* agg, BIGNUM* sig_share) {
@@ -407,7 +392,7 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
   }
 
   /*
-  # Verifies the validity of each response by checking g
+  # Verifies the validity of each response by checking
   zi ?= Di * Yi ^ (c * λi)
   */
 
@@ -423,13 +408,12 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
   BIGNUM* tmp = BN_new();
   BIGNUM* Yi = BN_new();
   BIGNUM* Di = BN_new();
-  BIGNUM* c = BN_new();
-  BIGNUM* lambda = BN_new();
+  BIGNUM* c = hash_func(receiver->R_pub_commit, receiver->tuple->m);
   BIGNUM* res_power = BN_new();
   receiver->public_key = BN_new();
+  BIGNUM* lambda;
   BN_copy(Yi, sender_pub_share->verify_share);
   BN_copy(Di, sender_pub_share->pub_share);
-  c = hash_func(receiver->R_pub_commit, receiver->tuple->m);
   BN_copy(receiver->hash, c);
   BN_copy(receiver->public_key,
           receiver->rcvd_pub_share_head->rcvd_packets->public_key);
@@ -446,23 +430,25 @@ bool accept_sig_share(aggregator* receiver, BIGNUM* sig_share,
   BN_mod_mul(tmp, Yi, res_power, order, ctx3);
   BN_mod_add(tmp, tmp, Di, order, ctx4);
 
-  printf("\n res_G_over_zi: ");
-  BN_print_fp(stdout, res_G_over_zi);
-  printf("\n left side: ");
-  BN_print_fp(stdout, tmp);
-  printf("\n");
+  if (!BN_cmp(res_G_over_zi, tmp)) {
+    BN_CTX_free(ctx);
+    BN_CTX_free(ctx2);
+    BN_CTX_free(ctx3);
+    BN_CTX_free(ctx4);
+    BN_clear_free(sig_share);
+    BN_clear_free(res_G_over_zi);
+    BN_clear_free(tmp);
+    BN_clear_free(Yi);
+    BN_clear_free(Di);
+    BN_clear_free(c);
+    BN_clear_free(lambda);
+    BN_clear_free(res_power);
 
-  BN_CTX_free(ctx);
-  BN_CTX_free(ctx2);
-  BN_CTX_free(ctx3);
-  BN_CTX_free(ctx4);
-  BN_free(res_G_over_zi);
-  BN_free(tmp);
-  BN_free(Yi);
-  BN_free(Di);
-  BN_free(c);
-  BN_free(lambda);
-  BN_free(res_power);
+    return true;
+  } else {
+    printf("\nVerification of signing response failed!\n");
+    abort();
+  }
 }
 
 BIGNUM* gen_signature(rcvd_sig_shares* head) {
@@ -486,12 +472,17 @@ signature_packet signature(aggregator* agg) {
   # 1. Compute the group’s response z = ∑ z_i
   # 2. Publish the signature σ = (z, c) along with the message m
   */
-  BIGNUM* signature = BN_new();
+  BIGNUM* signature = gen_signature(agg->rcvd_sig_shares_head);
 
-  signature = gen_signature(agg->rcvd_sig_shares_head);
+  signature_packet sig_packet;
+  sig_packet.hash = BN_new();
+  sig_packet.signature = BN_new();
+  BN_copy(sig_packet.signature, signature);
+  BN_copy(sig_packet.hash, agg->hash);
 
-  signature_packet sig_packet = {.hash = agg->hash, .signature = signature};
-
+  BN_clear_free(signature);
+  BN_clear_free(agg->R_pub_commit);
+  BN_clear_free(agg->hash);
   free_node_pub_share(agg->rcvd_pub_share_head);
   free_tuple_packet(agg->tuple);
   free_rcvd_sig_share(agg->rcvd_sig_shares_head);
@@ -505,16 +496,32 @@ bool verify_signature(signature_packet* sig_packet, char* m, BIGNUM* Y) {
   BIGNUM* temp1 = BN_new();
   BIGNUM* temp2 = BN_new();
   BIGNUM* temp3 = BN_new();
+  BN_CTX* ctx = BN_CTX_new();
+  BN_CTX* ctx2 = BN_CTX_new();
+  BN_CTX* ctx3 = BN_CTX_new();
 
   // Compute R0 = g^z * Y^-c mod order
-  BN_mod_mul(temp1, b_generator, sig_packet->signature, order, BN_CTX_new());
-  BN_mod_mul(temp3, Y, sig_packet->hash, order, BN_CTX_new());
-  BN_mod_sub(R0, temp1, temp3, order, BN_CTX_new());
+  BN_mod_mul(temp1, b_generator, sig_packet->signature, order, ctx);
+  BN_mod_mul(temp3, Y, sig_packet->hash, order, ctx2);
+  BN_mod_sub(R0, temp1, temp3, order, ctx3);
 
   z0 = hash_func(R0, m);
 
-  printf("\n R0: ");
-  BN_print_fp(stdout, R0);
-  printf("\n c': ");
-  BN_print_fp(stdout, z0);
+  if (!BN_cmp(sig_packet->hash, z0)) {
+    BN_clear_free(R0);
+    BN_clear_free(z0);
+    BN_clear_free(temp1);
+    BN_clear_free(temp2);
+    BN_clear_free(temp3);
+    BN_CTX_free(ctx);
+    BN_CTX_free(ctx2);
+    BN_CTX_free(ctx3);
+    free_curve_();
+
+    printf("\nSignature is verified!\n");
+    return true;
+  } else {
+    printf("\nVerification of signature failed!\n");
+    abort();
+  }
 }

@@ -1,11 +1,10 @@
 #include "../headers/setup.h"
 
+#include <assert.h>
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/rand.h>
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -27,24 +26,21 @@ void init_coeff_list(participant* p) {
   // Fill the coefficient_list with random BIGNUMs
   for (int i = 0; i < threshold; i++) {
     p->list->coeff[i] = BN_new();  // Call BN_new() before allocating memory
-    BN_copy(p->list->coeff[i], generate_rand());
+    BIGNUM* rand = generate_rand();
+    BN_copy(p->list->coeff[i], rand);
+    BN_clear_free(rand);
   }
-
-  printf("\n\nParticipant [%d] has  coeff_list:", p->index);
-  for (int i = 0; i < threshold; i++) {
-    printf("\n%d: ", i);
-    BN_print_fp(stdout, p->list->coeff[i]);
-  }
-  printf("\n\n");
 }
 
-void free_coeff_list(coeff_list* list) {
-  for (int i = 0; i < list->coefficient_list_len; i++) {
-    BN_clear_free(list->coeff[i]);
+void free_coeff_list(participant* p) {
+  for (int i = 0; i < p->list->coefficient_list_len; i++) {
+    BN_clear_free(p->list->coeff[i]);
   }
-  OPENSSL_free(list->coeff);
-  list->coefficient_list_len = 0;
-  list->coeff = NULL;
+  OPENSSL_free(p->list->coeff);
+  p->list->coefficient_list_len = 0;
+  p->list->coeff = NULL;
+  free(p->list);
+  p->list = NULL;
 }
 
 pub_commit_packet* init_pub_commit(participant* p) {
@@ -61,19 +57,17 @@ pub_commit_packet* init_pub_commit(participant* p) {
 
   /* fulfill with G ^ a_i_j where: 0 ≤ j ≤ t - 1 */
   for (int j = 0; j < threshold; j++) {
+    BN_CTX_start(ctx);
+
     p->pub_commit->commit[j] = BN_new();
     BIGNUM* result = BN_new();
     BN_mul(result, b_generator, p->list->coeff[j], ctx);
     BN_copy(p->pub_commit->commit[j], result);
+
+    BN_CTX_end(ctx);
+    BN_clear_free(result);
   }
 
-  printf("\nParticipant [%d] pub_commit:\n", p->index);
-  // Print the array of BIGNUM* values
-  for (int i = 0; i < threshold; i++) {
-    printf("[%d]:  ", i);
-    BN_print_fp(stdout, p->pub_commit->commit[i]);
-    printf("\n");
-  }
   BN_CTX_free(ctx);
   return p->pub_commit;
 }
@@ -175,20 +169,9 @@ BIGNUM* init_sec_share(participant* sender, int reciever_index) {
     // convert integer exponent to bignum
     BIGNUM* b_expo = BN_new();
     BN_set_word(b_expo, i);
-    sender->func->t[i].exponent = b_expo;
+    BN_copy(sender->func->t[i].exponent, b_expo);
+    /*BN_clear_free(b_expo);*/
   }
-
-  printf("\n\n Polynomial of P [%d]: ", sender->index);
-  for (int i = 0; i < threshold; i++) {
-    BN_print_fp(stdout, sender->func->t[i].coefficient);
-    printf(" x^");
-    BN_print_fp(stdout, sender->func->t[i].exponent);
-
-    if (i < threshold - 1) {
-      printf(" + ");
-    }
-  }
-  printf("\n");
 
   /*
   # 2. Calculate a polynomial
@@ -207,7 +190,7 @@ BIGNUM* init_sec_share(participant* sender, int reciever_index) {
       result = BN_new();
       BN_copy(result, multi_product);
     } else {
-      BN_mod_add(result, result, multi_product, order, BN_CTX_new());
+      BN_mod_add(result, result, multi_product, order, ctx2);
     }
 
     BN_CTX_end(ctx);
@@ -215,11 +198,6 @@ BIGNUM* init_sec_share(participant* sender, int reciever_index) {
     BN_clear_free(expo_product);
     BN_clear_free(multi_product);
   }
-
-  // print sig share
-  printf("\n\n Participant [%d] create sec-share for participant [%d]:\n ",
-         sender->index, reciever_index);
-  BN_print_fp(stdout, result);
 
   BN_CTX_free(ctx);
   BN_CTX_free(ctx2);
@@ -239,22 +217,22 @@ void free_poly(participant* p) {
 
 rcvd_sec_shares* create_node_share(BIGNUM* sec_share) {
   rcvd_sec_shares* newNode = (rcvd_sec_shares*)malloc(sizeof(rcvd_sec_shares));
-  newNode->rcvd_share = OPENSSL_malloc(sizeof(BIGNUM*));
+  newNode->rcvd_share = BN_new();
   newNode->next = NULL;
 
-  newNode->rcvd_share = BN_new();
   BN_copy(newNode->rcvd_share, sec_share);
 
   return newNode;
 }
 
 void free_rcvd_sec_shares(rcvd_sec_shares* head) {
-  if (head == NULL) {
-    return;
+  rcvd_sec_shares* curr = head;
+  while (curr != NULL) {
+    rcvd_sec_shares* next = curr->next;
+    BN_clear_free(curr->rcvd_share);
+    OPENSSL_free(curr);
+    curr = next;
   }
-  free_rcvd_sec_shares(head->next);
-  BN_clear_free(head->rcvd_share);
-  OPENSSL_free(head);
 }
 
 void insert_node_share(participant* p, BIGNUM* sec_share) {
@@ -282,6 +260,7 @@ bool accept_sec_share(participant* receiver, int sender_index,
 
   // TODO:
   if (sender_index == receiver->index) {
+    BN_clear_free(sec_share);
     return true;
   }
 
@@ -327,23 +306,24 @@ bool accept_sec_share(participant* receiver, int sender_index,
   }
 
   if (!BN_cmp(res_G_over_fj, res_commits)) {
+    BN_clear_free(b_index);
+    BN_clear_free(res_G_over_fj);
+    BN_clear_free(res_commits);
+    BN_clear_free(sec_share);
+    BN_CTX_free(ctx);
+    BN_CTX_free(ctx2);
+    BN_CTX_free(ctx3);
+    BN_CTX_free(ctx4);
+    BN_CTX_free(ctx5);
+
     return true;
   } else {
-    printf("\nMismatch of Public commitments!\n");
-    return EXIT_FAILURE;
+    printf("\nVerification of public commitments failed!\n");
+    abort();
   }
-
-  BN_clear_free(b_index);
-  BN_clear_free(res_G_over_fj);
-  BN_clear_free(res_commits);
-  BN_CTX_free(ctx);
-  BN_CTX_free(ctx2);
-  BN_CTX_free(ctx3);
-  BN_CTX_free(ctx4);
-  BN_CTX_free(ctx5);
 }
 
-void gen_sec_share(participant* p, rcvd_sec_shares* head) {
+bool gen_sec_share(participant* p, rcvd_sec_shares* head) {
   BIGNUM* sum = BN_new();
   BN_CTX* ctx = BN_CTX_new();
   BN_zero(sum);
@@ -359,9 +339,10 @@ void gen_sec_share(participant* p, rcvd_sec_shares* head) {
   BN_copy(p->secret_share, sum);
   BN_free(sum);
   BN_CTX_free(ctx);
+  return true;
 }
 
-void gen_pub_key(participant* p, rcvd_pub_commits* head, BIGNUM* self_commit) {
+bool gen_pub_key(participant* p, rcvd_pub_commits* head, BIGNUM* self_commit) {
   BIGNUM* product = BN_new();
   BN_CTX* ctx = BN_CTX_new();
   BN_copy(product, self_commit);
@@ -376,50 +357,59 @@ void gen_pub_key(participant* p, rcvd_pub_commits* head, BIGNUM* self_commit) {
   BN_copy(p->public_key, product);
   BN_free(product);
   BN_CTX_free(ctx);
+
+  return true;
 }
 
-bool gen_keys(participant* p) {
+void gen_keys(participant* p) {
   p->secret_share = BN_new();
   p->verify_share = BN_new();
   p->public_key = BN_new();
+  bool success = true;
+  BN_CTX* ctx = BN_CTX_new();
   /*
   # 1. will create long-lived secret share:
   # s_i = ∑ f_j(i), 1 ≤ j ≤ n
   # sum of share list [] -> store secret share;
   */
-  printf("\nParitcipant [%d]: \n", p->index);
 
-  gen_sec_share(p, p->rcvd_sec_share_head);
+  if (!gen_sec_share(p, p->rcvd_sec_share_head)) {
+    success = false;
+    printf("\nFailed to generate keys!\n");
+    abort();
+  }
 
   /*
   # 2. Each participant then calculates their own public verification share:
   # Y_i = G ^ s_i
   */
 
-  BN_mul(p->verify_share, b_generator, p->secret_share, BN_CTX_new());
+  if (!BN_mul(p->verify_share, b_generator, p->secret_share, ctx)) {
+    success = false;
+    printf("\nFailed to generate keys!\n");
+    abort();
+  }
 
   /*
   # 3. Each participant then calculates public key:
   # Y = ∏ 𝜙_j_0
   */
 
-  gen_pub_key(p, p->rcvd_commit_head, p->pub_commit->commit[0]);
+  if (!gen_pub_key(p, p->rcvd_commit_head, p->pub_commit->commit[0])) {
+    success = false;
+    printf("\nFailed to generate keys!\n");
+    abort();
+  }
 
-  printf("\n\n Keys:\n");
-  printf(" \nSEC_share: ");
-  BN_print_fp(stdout, p->secret_share);
-  printf(" \nPUB_share: ");
-  BN_print_fp(stdout, p->verify_share);
-  printf(" \nPUB_key: ");
-  BN_print_fp(stdout, p->public_key);
-  printf(" \n\n ");
+  if (success) {
+    printf("\nParticipant[%d] successfully generated the keys!\n", p->index);
+  }
 
   // Free used memory for every participant
-  free_coeff_list(p->list);
+  BN_CTX_free(ctx);
+  free_coeff_list(p);
   free_pub_commit(p->pub_commit);
   free_poly(p);
   free_rcvd_pub_commits(p->rcvd_commit_head);
   free_rcvd_sec_shares(p->rcvd_sec_share_head);
-
-  return true;
 }

@@ -3,10 +3,6 @@
 
 #include <openssl/bn.h>
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 typedef struct {
   size_t coefficient_list_len;
@@ -84,6 +80,6 @@ BIGNUM* init_sec_share(participant* sender, int reciever_index);
 bool accept_sec_share(participant* reciever, int sender_index,
                       BIGNUM* sec_share);
 
-bool gen_keys(participant* p);
+void gen_keys(participant* p);
 
 #endif

@@ -40,6 +40,23 @@ void initialize_curve_parameters() {
   OPENSSL_free(buf);
 }
 
+void free_curve() {
+  if (ec_group) {
+    EC_GROUP_free(ec_group);
+    ec_group = NULL;
+  }
+
+  if (b_generator) {
+    BN_free(b_generator);
+    b_generator = NULL;
+  }
+
+  if (phi) {
+    BN_free(phi);
+    phi = NULL;
+  }
+}
+
 BIGNUM* generate_rand() {
   BIGNUM* rand_num;
   unsigned char buffer[NUM_BYTES];
@@ -59,6 +76,7 @@ BIGNUM* generate_rand() {
 
   OPENSSL_cleanse(buffer,
                   sizeof(buffer));  // free the memory allocated for buffer
-
+  BN_CTX_free(ctx);
+  BN_clear_free(rand_num);
   return result;
 }

@@ -1,5 +1,5 @@
 #include <openssl/bn.h>
-#include <stdint.h>
+#include <stdbool.h>
 
 #include "setup.h"
 

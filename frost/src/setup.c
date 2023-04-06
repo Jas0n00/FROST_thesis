@@ -1,6 +1,5 @@
 #include "../headers/setup.h"
 
-#include <assert.h>
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/rand.h>
@@ -22,6 +21,12 @@ void init_coeff_list(participant* p) {
   p->list->coefficient_list_len = threshold;
   p->list->coeff = OPENSSL_malloc(
       sizeof(BIGNUM*) * threshold);  // Note the use of sizeof(BIGNUM*)
+  static bool is_initialized = false;
+
+  if (!is_initialized) {
+    initialize_curve_parameters();
+    is_initialized = true;
+  }
 
   // Fill the coefficient_list with random BIGNUMs
   for (int i = 0; i < threshold; i++) {
@@ -169,8 +174,7 @@ BIGNUM* init_sec_share(participant* sender, int reciever_index) {
     // convert integer exponent to bignum
     BIGNUM* b_expo = BN_new();
     BN_set_word(b_expo, i);
-    BN_copy(sender->func->t[i].exponent, b_expo);
-    /*BN_clear_free(b_expo);*/
+    sender->func->t[i].exponent = b_expo;
   }
 
   /*

@@ -1,10 +1,13 @@
 #include "../headers/signing.h"
 
 #include <openssl/bn.h>
+#include <openssl/crypto.h>
+#include <openssl/ec.h>
+#include <openssl/obj_mac.h>
+#include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 #include "../headers/globals.h"
 #include "../headers/setup.h"
@@ -117,8 +120,6 @@ void pub_shares_mul(aggregator* a) {
   rcvd_pub_shares* current = a->rcvd_pub_share_head;
   BN_zero(res_R_pub_commit);
 
-  printf("\nAgg comuputes R: ");
-
   while (current != NULL) {
     BN_CTX_start(ctx);
     BN_mod_add(res_R_pub_commit, res_R_pub_commit,
@@ -222,11 +223,6 @@ bool accept_tuple(participant* receiver, tuple_packet* packet) {
   for (int i = 0; i < packet->m_size; i++) {
     receiver->rcvd_tuple->m[i] = packet->m[i];
   }
-
-  printf("\nParticipant [%d] has tuple:\nR: ", receiver->index);
-  BN_print_fp(stdout, receiver->rcvd_tuple->R);
-  printf("\nmessage: %s", receiver->rcvd_tuple->m);
-  printf("\n");
 
   return true;
 }
@@ -516,7 +512,7 @@ bool verify_signature(signature_packet* sig_packet, char* m, BIGNUM* Y) {
     BN_CTX_free(ctx);
     BN_CTX_free(ctx2);
     BN_CTX_free(ctx3);
-    free_curve_();
+    free_curve();
 
     printf("\nSignature is verified!\n");
     return true;

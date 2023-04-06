@@ -4,6 +4,8 @@
 #include <openssl/bn.h>
 #include <stdbool.h>
 
+typedef struct participant participant;  // Forward declaration
+
 typedef struct {
   size_t coefficient_list_len;
   BIGNUM** coeff;
@@ -50,7 +52,7 @@ typedef struct {
   size_t S_size;
 } tuple_packet;
 
-typedef struct {
+struct participant {
   int index;
   int threshold;
   int participants;
@@ -60,12 +62,12 @@ typedef struct {
   BIGNUM* nonce;
   coeff_list* list;
   pub_commit_packet* pub_commit;
-  pub_share_packet* pub_share;
   poly* func;
   rcvd_pub_commits* rcvd_commit_head;
   rcvd_sec_shares* rcvd_sec_share_head;
+  pub_share_packet* pub_share;
   tuple_packet* rcvd_tuple;
-} participant;
+};
 
 /*Pedersen Distributed Key Generation*/
 

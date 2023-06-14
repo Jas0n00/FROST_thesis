@@ -23,6 +23,8 @@ Before you begin, ensure that you have administrative privileges on your system.
 
 Once you have completed these steps, OpenSSL and its dependencies should be successfully installed on your system.
 
+For building the project use `make`. The project is built in build folder. 
+
 ## Additional Information
 For more information please read the thesis
 

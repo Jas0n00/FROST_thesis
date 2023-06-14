@@ -10,7 +10,8 @@ Before you begin, ensure that you have administrative privileges on your system.
 ## Installation Steps
 
 1. **Install OpenSSL**: Run the following command to install OpenSSL:
-sudo apt-get install openssl
+
+'sudo apt-get install openssl'
 2. **Install the OpenSSL development headers**: Run the following command to install the OpenSSL development headers:
 sudo apt-get install libssl-dev
 3. **Install make for building the project**: Run the following command to install make:

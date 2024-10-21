@@ -6,181 +6,164 @@
 #include "../headers/signing.h"
 
 int main(int argc, char const* argv[]) {
-  int threshold = 3;
-  int participants = 5;
+    int threshold, participants;
 
-  /*Initialize Participants*/
-  participant p0 = {.index = 0,
-                    .threshold = threshold,
-                    .participants = participants,
-                    .pub_commit = NULL,
-                    .rcvd_commit_head = NULL,
-                    .rcvd_sec_share_head = NULL};
-  participant p1 = {.index = 1,
-                    .threshold = threshold,
-                    .participants = participants,
-                    .pub_commit = NULL,
-                    .rcvd_commit_head = NULL,
-                    .rcvd_sec_share_head = NULL};
-  participant p2 = {.index = 2,
-                    .threshold = threshold,
-                    .participants = participants,
-                    .pub_commit = NULL,
-                    .rcvd_commit_head = NULL,
-                    .rcvd_sec_share_head = NULL};
-  participant p3 = {.index = 3,
-                    .threshold = threshold,
-                    .participants = participants,
-                    .pub_commit = NULL,
-                    .rcvd_commit_head = NULL,
-                    .rcvd_sec_share_head = NULL};
-  participant p4 = {.index = 4,
-                    .threshold = threshold,
-                    .participants = participants,
-                    .pub_commit = NULL,
-                    .rcvd_commit_head = NULL,
-                    .rcvd_sec_share_head = NULL};
+    // Ask the user for input
+    printf("Enter the threshold: ");
+    scanf("%d", &threshold);
+    printf("Enter the number of participants: ");
+    scanf("%d", &participants);
 
-  /*Initialize Public Commitments*/
-  pub_commit_packet* p0_pub_commit = init_pub_commit(&p0);
-  pub_commit_packet* p1_pub_commit = init_pub_commit(&p1);
-  pub_commit_packet* p2_pub_commit = init_pub_commit(&p2);
-  pub_commit_packet* p3_pub_commit = init_pub_commit(&p3);
-  pub_commit_packet* p4_pub_commit = init_pub_commit(&p4);
+    // Dynamically allocate memory for participants
+    participant* p = (participant*)malloc(participants * sizeof(participant));
+    if (p == NULL) {
+        printf("Memory allocation failed\n");
+        return 1;
+    }
 
-  /*Broadcast*/
-  accept_pub_commit(&p0, p1_pub_commit);
-  accept_pub_commit(&p0, p2_pub_commit);
-  accept_pub_commit(&p0, p3_pub_commit);
-  accept_pub_commit(&p0, p4_pub_commit);
+    // Initialize participants
+    for (int i = 0; i < participants; i++) {
+        p[i].index = i;
+        p[i].threshold = threshold;
+        p[i].participants = participants;
+        p[i].pub_commit = NULL;
+        p[i].rcvd_commit_head = NULL;
+        p[i].rcvd_sec_share_head = NULL;
+    }
 
-  accept_pub_commit(&p1, p0_pub_commit);
-  accept_pub_commit(&p1, p2_pub_commit);
-  accept_pub_commit(&p1, p3_pub_commit);
-  accept_pub_commit(&p1, p4_pub_commit);
+    // Initialize public commitments for each participant
+    pub_commit_packet** pub_commits = (pub_commit_packet**)malloc(participants * sizeof(pub_commit_packet*));
+    if (pub_commits == NULL) {
+        printf("Memory allocation for public commitments failed\n");
+        free(p);
+        return 1;
+    }
 
-  accept_pub_commit(&p2, p0_pub_commit);
-  accept_pub_commit(&p2, p1_pub_commit);
-  accept_pub_commit(&p2, p3_pub_commit);
-  accept_pub_commit(&p2, p4_pub_commit);
+    for (int i = 0; i < participants; i++) {
+        pub_commits[i] = init_pub_commit(&p[i]);
+    }
 
-  accept_pub_commit(&p3, p0_pub_commit);
-  accept_pub_commit(&p3, p1_pub_commit);
-  accept_pub_commit(&p3, p2_pub_commit);
-  accept_pub_commit(&p3, p4_pub_commit);
+    // Simulate broadcasting the public commitments to all other participants
+    for (int i = 0; i < participants; i++) {
+        for (int j = 0; j < participants; j++) {
+            if (i != j) {
+                accept_pub_commit(&p[i], pub_commits[j]);
+            }
+        }
+    }
 
-  accept_pub_commit(&p4, p0_pub_commit);
-  accept_pub_commit(&p4, p1_pub_commit);
-  accept_pub_commit(&p4, p2_pub_commit);
-  accept_pub_commit(&p4, p3_pub_commit);
+    // Initialize and exchange secret shares
+    for (int i = 0; i < participants; i++) {
+        BIGNUM* self_share = init_sec_share(&p[i], p[i].index);
+        accept_sec_share(&p[i], p[i].index, self_share);
 
-  /*Send & Verifies Secret Shares*/
-  BIGNUM* p0_sec_share = init_sec_share(&p0, p0.index);
-  accept_sec_share(&p0, p0.index, p0_sec_share);
-  BIGNUM* p01_sec_share = init_sec_share(&p0, p1.index);
-  accept_sec_share(&p1, p0.index, p01_sec_share);
-  BIGNUM* p02_sec_share = init_sec_share(&p0, p2.index);
-  accept_sec_share(&p2, p0.index, p02_sec_share);
-  BIGNUM* p03_sec_share = init_sec_share(&p0, p3.index);
-  accept_sec_share(&p3, p0.index, p03_sec_share);
-  BIGNUM* p04_sec_share = init_sec_share(&p0, p4.index);
-  accept_sec_share(&p4, p0.index, p04_sec_share);
+        for (int j = 0; j < participants; j++) {
+            if (i != j) {
+                BIGNUM* sec_share = init_sec_share(&p[i], p[j].index);
+                accept_sec_share(&p[j], p[i].index, sec_share);
+            }
+        }
+    }
 
-  BIGNUM* p1_sec_share = init_sec_share(&p1, p1.index);
-  accept_sec_share(&p1, p1.index, p1_sec_share);
-  BIGNUM* p10_sec_share = init_sec_share(&p1, p0.index);
-  accept_sec_share(&p0, p1.index, p10_sec_share);
-  BIGNUM* p12_sec_share = init_sec_share(&p1, p2.index);
-  accept_sec_share(&p2, p1.index, p12_sec_share);
-  BIGNUM* p13_sec_share = init_sec_share(&p1, p3.index);
-  accept_sec_share(&p3, p1.index, p13_sec_share);
-  BIGNUM* p14_sec_share = init_sec_share(&p1, p4.index);
-  accept_sec_share(&p4, p1.index, p14_sec_share);
+    // Generate keys for all participants
+    for (int i = 0; i < participants; i++) {
+        gen_keys(&p[i]);
+    }
 
-  BIGNUM* p2_sec_share = init_sec_share(&p2, p2.index);
-  accept_sec_share(&p2, p2.index, p2_sec_share);
-  BIGNUM* p20_sec_share = init_sec_share(&p2, p0.index);
-  accept_sec_share(&p0, p2.index, p20_sec_share);
-  BIGNUM* p21_sec_share = init_sec_share(&p2, p1.index);
-  accept_sec_share(&p1, p2.index, p21_sec_share);
-  BIGNUM* p23_sec_share = init_sec_share(&p2, p3.index);
-  accept_sec_share(&p3, p2.index, p23_sec_share);
-  BIGNUM* p24_sec_share = init_sec_share(&p2, p4.index);
-  accept_sec_share(&p4, p2.index, p24_sec_share);
+    // ### Signing process ###
+    participant* threshold_set = (participant*)malloc(threshold * sizeof(participant));
+    if (threshold_set == NULL) {
+        printf("Memory allocation for threshold set failed\n");
+        free(p);
+        free(pub_commits);
+        return 1;
+    }
 
-  BIGNUM* p3_sec_share = init_sec_share(&p3, p3.index);
-  accept_sec_share(&p3, p3.index, p3_sec_share);
-  BIGNUM* p30_sec_share = init_sec_share(&p3, p0.index);
-  accept_sec_share(&p0, p3.index, p30_sec_share);
-  BIGNUM* p31_sec_share = init_sec_share(&p3, p1.index);
-  accept_sec_share(&p1, p3.index, p31_sec_share);
-  BIGNUM* p32_sec_share = init_sec_share(&p3, p2.index);
-  accept_sec_share(&p2, p3.index, p32_sec_share);
-  BIGNUM* p34_sec_share = init_sec_share(&p3, p4.index);
-  accept_sec_share(&p4, p3.index, p34_sec_share);
+    // Ask user to select participants for signing
+    printf("Enter the indices of %d participants for signing (0 to %d):\n", threshold, participants - 1);
+    int* indices = (int*)malloc(threshold * sizeof(int));
+    if (indices == NULL) {
+        printf("Memory allocation for indices failed\n");
+        free(p);
+        free(pub_commits);
+        free(threshold_set);
+        return 1;
+    }
 
-  BIGNUM* p4_sec_share = init_sec_share(&p4, p4.index);
-  accept_sec_share(&p4, p4.index, p4_sec_share);
-  BIGNUM* p40_sec_share = init_sec_share(&p4, p0.index);
-  accept_sec_share(&p0, p4.index, p40_sec_share);
-  BIGNUM* p41_sec_share = init_sec_share(&p4, p1.index);
-  accept_sec_share(&p1, p4.index, p41_sec_share);
-  BIGNUM* p42_sec_share = init_sec_share(&p4, p2.index);
-  accept_sec_share(&p2, p4.index, p42_sec_share);
-  BIGNUM* p43_sec_share = init_sec_share(&p4, p3.index);
-  accept_sec_share(&p3, p4.index, p43_sec_share);
+    for (int i = 0; i < threshold; i++) {
+        printf("Enter index for participant %d. Range of index [0 - %d] ", i + 1, participants - 1);
+        scanf("%d", &indices[i]);
 
-  /*Generate Keys*/
-  gen_keys(&p0);
-  gen_keys(&p1);
-  gen_keys(&p2);
-  gen_keys(&p3);
-  gen_keys(&p4);
+        // Check if the input is valid
+        if (indices[i] < 0 || indices[i] >= participants) {
+            printf("Invalid index! Please enter a number between 0 and %d.\n", participants - 1);
+            i--;  // Redo the iteration for invalid input
+        } else {
+            // Assign the participant to the threshold set
+            threshold_set[i] = p[indices[i]];
+        }
+    }
 
-  /*### Signing ###*/
+    // Ask user to input the message to be signed
+    char message[256];  // Assume a max message length of 255 characters
+    printf("Enter the message to be signed: ");
+    scanf(" %[^\n]%*c", message);  // This will capture the full line including spaces
+    size_t m_len = strlen(message);
 
-  participant threshold_set[] = {p0, p1, p2};
-  char message[] = "17896543758";
-  size_t m_len = sizeof(message);
-  size_t set_size = sizeof(threshold_set) / sizeof(participant);
+    size_t set_size = threshold;
 
-  aggregator agg = {
-      .threshold = threshold,
-      .rcvd_pub_share_head = NULL,
-  };
+    aggregator agg = {
+        .threshold = threshold,
+        .rcvd_pub_share_head = NULL,
+    };
 
-  /*Initialize Public Share commitment with nonces*/
-  pub_share_packet* p0_pub_share = init_pub_share(&p1);
-  pub_share_packet* p1_pub_share = init_pub_share(&p0);
-  pub_share_packet* p2_pub_share = init_pub_share(&p2);
+    // Initialize public share commitments for chosen participants
+    pub_share_packet** pub_shares = (pub_share_packet**)malloc(threshold * sizeof(pub_share_packet*));
+    if (pub_shares == NULL) {
+        printf("Memory allocation for public shares failed\n");
+        free(p);
+        free(pub_commits);
+        free(threshold_set);
+        free(indices);
+        return 1;
+    }
 
-  accept_pub_share(&agg, p0_pub_share);
-  accept_pub_share(&agg, p1_pub_share);
-  accept_pub_share(&agg, p2_pub_share);
+    for (int i = 0; i < threshold; i++) {
+        pub_shares[i] = init_pub_share(&threshold_set[i]);
+        accept_pub_share(&agg, pub_shares[i]);
+    }
 
-  tuple_packet* agg_tuple =
-      init_tuple_packet(&agg, message, m_len, threshold_set, set_size);
+    // Generate and accept tuple packets
+    tuple_packet* agg_tuple = init_tuple_packet(&agg, message, m_len, threshold_set, set_size);
+    for (int i = 0; i < threshold; i++) {
+        accept_tuple(&threshold_set[i], agg_tuple);
+    }
 
-  accept_tuple(&p1, agg_tuple);
-  accept_tuple(&p0, agg_tuple);
-  accept_tuple(&p2, agg_tuple);
+    // Generate signature shares
+    for (int i = 0; i < threshold; i++) {
+        BIGNUM* sig_share = init_sig_share(&threshold_set[i]);
+        accept_sig_share(&agg, sig_share, threshold_set[i].index);
+    }
 
-  BIGNUM* sig_share_p0 = init_sig_share(&p0);
-  BIGNUM* sig_share_p1 = init_sig_share(&p1);
-  BIGNUM* sig_share_p2 = init_sig_share(&p2);
+    // Finalize the signature
+    signature_packet sig = signature(&agg);
 
-  accept_sig_share(&agg, sig_share_p0, p0.index);
-  accept_sig_share(&agg, sig_share_p1, p1.index);
-  accept_sig_share(&agg, sig_share_p2, p2.index);
+    printf("\nSignature: ");
+    BN_print_fp(stdout, sig.signature);
+    printf("\nHash: ");
+    BN_print_fp(stdout, sig.hash);
+    printf("\n");
 
-  signature_packet sig = signature(&agg);
+    // Verify the signature
+    verify_signature(&sig, message, p[0].public_key);
 
-  printf("\nSignature: ");
-  BN_print_fp(stdout, sig.signature);
-  printf("\nHash: ");
-  BN_print_fp(stdout, sig.hash);
-  printf("\n");
+    // Clean up dynamically allocated memory
+    free(p);
+    free(pub_commits);
+    free(pub_shares);
+    free(threshold_set);
+    free(indices);
 
-  verify_signature(&sig, message, p0.public_key);
-  return 0;
+    return 0;
 }
+
